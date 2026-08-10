@@ -104,6 +104,36 @@ object Frontmatter {
         return "---\n${lines.joinToString("\n")}\n---\n\n${body.trimStart('\n')}"
     }
 
+    /** The keys a note is read by, kept at the top when they are written fresh. */
+    private val LEADING_KEYS = listOf("title", "schema", "tags")
+
+    /**
+     * Rewrite a note's frontmatter, keeping its body byte for byte.
+     *
+     * This is what a properties sheet writes through: the person is editing
+     * fields, not YAML, and a phone is the last place anyone wants to be typing
+     * `---` by hand. Existing keys keep their order and their place; new ones
+     * are appended, except the three a note is identified by, which are hoisted
+     * so the block reads like a heading rather than a pile.
+     *
+     * The block is re-serialized rather than patched line by line, so a note
+     * that arrived with block lists comes back with inline ones. That is the one
+     * liberty taken with somebody else's file, and it is taken only on the notes
+     * they actually edit here.
+     */
+    fun apply(raw: String, changes: Map<String, Any?> = emptyMap(), remove: Set<String> = emptySet()): String {
+        val parsed = parse(raw)
+        val merged = LinkedHashMap<String, Any?>(parsed.frontmatter)
+        for (key in remove) merged.remove(key)
+        for ((key, value) in changes) merged[key] = value
+
+        val ordered = LinkedHashMap<String, Any?>()
+        for (key in LEADING_KEYS) if (merged.containsKey(key)) ordered[key] = merged[key]
+        for ((key, value) in merged) if (key !in LEADING_KEYS) ordered[key] = value
+
+        return serialize(ordered, parsed.body)
+    }
+
     private val NEEDS_QUOTES = Regex("""[:#\[\]{}"'\n]""")
 
     private fun serializeScalar(v: Any?): String = when (v) {

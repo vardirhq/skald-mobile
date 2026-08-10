@@ -107,6 +107,12 @@ data class FolderNode(
 ) {
     /** Every note under this folder, at any depth. */
     fun allNotes(): List<String> = notes + folders.flatMap { it.allNotes() }
+
+    /** Every folder under this one, at any depth, parents before children. */
+    fun allFolders(): List<FolderNode> = folders.flatMap { listOf(it) + it.allFolders() }
+
+    /** How deep this folder sits, so a flat list can still be indented. */
+    val depth: Int get() = if (path.isEmpty()) 0 else path.count { it == '/' } + 1
 }
 
 @Serializable

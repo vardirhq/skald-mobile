@@ -162,6 +162,29 @@ class TasksTest {
         assertEquals("2026-06-02", parsed.due)
         assertEquals("Draft the schema", parsed.content)
     }
+
+    @Test
+    fun `tags are edited like every other piece of metadata`() {
+        val raw = "- [ ] Ship it @due(2026-06-01) #release"
+        val retagged = Tasks.updateLine(raw, 1, Tasks.Edits(tags = listOf("release", "editor")))
+        assertEquals("- [ ] Ship it @due(2026-06-01) #release #editor", retagged)
+
+        val cleared = Tasks.updateLine(raw, 1, Tasks.Edits(tags = emptyList()))
+        assertEquals("- [ ] Ship it @due(2026-06-01)", cleared)
+
+        // Left alone, they survive an edit to something else entirely.
+        val renamed = Tasks.updateLine(raw, 1, Tasks.Edits(content = "Ship it properly"))
+        assertEquals(listOf("release"), Tasks.extract(renamed).first().tags)
+    }
+
+    @Test
+    fun `one line parses on its own, for a sheet that edits one thread`() {
+        val task = Tasks.parseLine("  - [ ] Ship it @p(high) #release")
+        assertNotNull(task)
+        assertEquals(TaskPriority.High, task.priority)
+        assertEquals("Ship it", task.content)
+        assertNull(Tasks.parseLine("not a task at all"))
+    }
 }
 
 class WikilinksTest {
@@ -221,6 +244,17 @@ class WikilinksTest {
         val body = "See [[Old name#Part|as written]] and [[Old name]]."
         val renamed = Wikilinks.rename(body, "Old name", "New name")
         assertEquals("See [[New name#Part|as written]] and [[New name]].", renamed)
+    }
+
+    @Test
+    fun `the shortest target that still resolves is the one worth writing`() {
+        val index = Wikilinks.buildIndex(notes)
+        // Nothing else answers to it, so the bare name is enough.
+        assertEquals("Jörmungandr", Wikilinks.shortestTarget("Projects/Jörmungandr.md", index))
+        // Two notes share this file name, so the loser has to name its folder.
+        val bare = index.resolve("Why local-first")
+        val other = notes.map { it.path }.first { it != bare && it.endsWith("Why local-first.md") }
+        assertEquals(other.removeSuffix(".md"), Wikilinks.shortestTarget(other, index))
     }
 
     @Test

@@ -28,17 +28,37 @@ codes out.
   checkboxes, quotes, headings, fences, rules — where every button is a toggle, because
   a phone has no ⌘B and finding the way back out from between two asterisks with a thumb
   is not a thing anyone should have to do. Read and source views are one tap away.
+- **The syntax comes to the caret** — the phone cannot assume you know it, or that you
+  could thumb it correctly if you did. Typing `[[` writes the `]]` and offers the notes
+  it could mean, narrowed as you type and matched on the path as readily as the title;
+  `#` offers the tags the vault already uses, and the one you are inventing; `@` offers
+  `@due(…)`, `@p(…)` and `@status(…)`, and lands the caret inside the parentheses where
+  the dates are waiting. Stand on a checkbox and the bar says what that thread carries,
+  one tap from all of it.
 - **Typed notes** — every note carries a schema (`Note`, `Project`, `Person`, `Daily`,
   `Idea`, `Source`, `Code`, `Place`), from frontmatter or inferred from its folder. Each
   schema wears a monoline rune, drawn on the same 24-grid as the desktop's, that follows
-  the note into every list, chip, tab and star.
+  the note into every list, chip, tab and star. The frontmatter block in the editor is a
+  way in rather than a read-out: it opens a properties sheet with the schema as its eight
+  runes, the title, the tags, and every other field as a row — no YAML, and no trip
+  through the raw editor to change what kind of note this is.
 - **Threads** — any `- [ ]` checkbox becomes a task in the global list, grouped by when
   it is due. Ticking it anywhere rewrites that line in its parent note, metadata intact:
-  `@due(2026-06-01) @p(high) @status(working) #tag`.
+  `@due(2026-06-01) @p(high) @status(working) #tag`. A long press opens all of it as
+  things to point at — due-date chips that also take "friday", "+3d" or "24/6", priority,
+  status, tags — and the threads list writes new ones straight into today's page.
 - **Wikilinks and backlinks** — `[[Note]]`, `[[Folder/Note]]` and `[[Folder/Note.md]]`
   all resolve, folder-qualified beating bare, so two notes with the same file name stay
-  apart. The editor shows what links back; renaming a note rewrites every link that
-  pointed at it, in whichever form it was written.
+  apart. A completed link is written in the shortest target that still lands on the note
+  it names, which means it grows its folder exactly when a bare name stops being enough.
+  The editor shows what links back; renaming a note rewrites every link that pointed at
+  it, in whichever form it was written.
+- **Folders, and a note you can rename** — the explorer is a real tree: nested,
+  collapsible, empty folders included. A long press on a note offers what a right-click
+  would — open, properties, rename the file, move it, duplicate it, copy a link to it,
+  pin it, delete it — and a long press on a folder renames it, taking its notes and their
+  links along. The new-note sheet offers every folder in the vault rather than the first
+  few at the top.
 - **The Logbook** — today's page in the saga: the date set large, honest counts, a week
   of activity, the threads due soonest, what you touched, a pinned note.
 - **The Constellation** — the graph as a star chart. Positions are laid out once,
@@ -117,7 +137,8 @@ core/     Plain Kotlin/JVM. No Android API anywhere, so it compiles and tests
           without an SDK — and could back a desktop or server build unchanged.
   model/      the vault's types
   text/       frontmatter, threads, wikilinks, schema inference, fuzzy, Markdown,
-              the live editor's block rules and the formatting marks
+              the live editor's block rules, the formatting marks, what the caret
+              is in the middle of and what to offer for it, and loose dates
   vault/      the indexer: raw files in, one VaultSnapshot out
   graph/      the stable constellation layout
   gesh/       bytes, ids, crypto, pairing, the v1 protocol client
@@ -127,7 +148,8 @@ app/      Android and Compose.
   data/       FileVault (the nine sync operations plus history), keystore
               secrets, WorkManager scheduling, the repository
   ui/theme/   tokens.css, one for one
-  ui/         runes, the Markdown renderer, the screens, the shell
+  ui/         runes, the Markdown renderer, the sheets and pickers, the screens,
+              the shell
 ```
 
 Every screen reads one `VaultSnapshot`. Nothing else parses a note.
@@ -135,7 +157,7 @@ Every screen reads one `VaultSnapshot`. Nothing else parses a note.
 ## Building
 
 ```bash
-./gradlew :core:test        # 123 tests — domain, editing, crypto, protocol, merge, sync
+./gradlew :core:test        # 155 tests — domain, editing, crypto, protocol, merge, sync
 ./gradlew :app:assembleDebug
 ```
 
@@ -144,13 +166,14 @@ than pinning a toolchain, so any recent JDK works.
 
 ## Status
 
-`core` is complete and tested: 123 tests cover frontmatter, threads and their write-back,
+`core` is complete and tested: 155 tests cover frontmatter, threads and their write-back,
 wikilink resolution, the Markdown block rules, sealing and opening events, path validation
 against hostile payloads, the live editor's block splitting and caret arithmetic, what Enter
-does in each kind of block, the formatting toggles, the merge rules, and a full end-to-end
-loop — two vaults pairing,
-propagating, deleting, converging, preserving the losing edit, and surviving a restart —
-against an in-memory relay that encodes the protocol as documented.
+does in each kind of block, the formatting toggles, what the caret is in the middle of and
+what to offer for it, how loosely a typed date may be written, the merge rules, and a full
+end-to-end loop — two vaults pairing, propagating, deleting, converging, preserving the
+losing edit, and surviving a restart — against an in-memory relay that encodes the protocol
+as documented.
 
 `app` is written but **has never been compiled**: it was developed in a sandbox whose
 egress policy blocks `dl.google.com`, and AndroidX is published nowhere else, so neither

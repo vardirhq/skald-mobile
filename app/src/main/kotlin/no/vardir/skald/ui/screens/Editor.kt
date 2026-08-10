@@ -43,10 +43,12 @@ import no.vardir.skald.core.model.AttachmentRef
 import no.vardir.skald.core.model.NotePayload
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.model.VaultSnapshot
+import no.vardir.skald.core.text.Dates
 import no.vardir.skald.core.text.Formatting
 import no.vardir.skald.core.text.Frontmatter
 import no.vardir.skald.core.text.LiveMarkdown
 import no.vardir.skald.core.text.Markdown
+import no.vardir.skald.core.text.Suggest
 import no.vardir.skald.core.text.Tasks
 import no.vardir.skald.core.text.Wikilinks
 import no.vardir.skald.ui.EditorMode
@@ -56,6 +58,8 @@ import no.vardir.skald.ui.components.MarkdownContext
 import no.vardir.skald.ui.components.MarkdownView
 import no.vardir.skald.ui.components.Rune
 import no.vardir.skald.ui.components.SectionHeader
+import no.vardir.skald.ui.components.SuggestionBar
+import no.vardir.skald.ui.components.ThreadHintBar
 import no.vardir.skald.ui.theme.Skald
 
 /**
@@ -65,6 +69,11 @@ import no.vardir.skald.ui.theme.Skald
  * rendered underneath, and the one block your caret is in shown as the Markdown
  * it really is. *Read* is that page with nothing to type into. *Source* is the
  * whole file, because the file is the thing you actually own.
+ *
+ * Above the keyboard sits whatever the caret has earned: the marks, plus the
+ * notes a half-typed `[[` could mean, plus — on a checkbox — everything a
+ * thread can carry. A phone cannot rely on you knowing the syntax, so the
+ * syntax comes to the caret instead.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -75,8 +84,10 @@ fun EditorScreen(
     mode: EditorMode,
     onOpenNote: (String) -> Unit,
     onSave: (String) -> Unit,
+    onDraftChanged: (String, String?) -> Unit,
     onOpenExternal: (String) -> Unit,
     onOpenAttachment: (AttachmentRef) -> Unit,
+    onNoteMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Skald.colors
@@ -91,6 +102,11 @@ fun EditorScreen(
 
     LaunchedEffect(note.content) {
         if (draft == note.content) draft = null
+    }
+    // The shell needs to know there is unsaved text, so a rename or a delete can
+    // land it first rather than reading a file that is a keystroke behind.
+    LaunchedEffect(draft, note.meta.path) {
+        onDraftChanged(note.meta.path, draft)
     }
     // Autosave on a pause rather than on every keystroke, so a long note is not
     // rewritten — and re-hashed for sync — once per character.
@@ -110,10 +126,20 @@ fun EditorScreen(
     }
 
     // The link index is the indexer's, not a second opinion: same tiers, same
-    // winner, so a tap goes exactly where the graph says the edge goes.
+    // winner, so a tap goes exactly where the graph says the edge goes — and so
+    // a completed link is written in the shortest form that still lands there.
     val linkIndex = remember(snapshot.notes) {
         Wikilinks.buildIndex(snapshot.notes.map { Wikilinks.Linkable(it.path, it.title) })
     }
+    val vocabulary = remember(snapshot.notes, snapshot.tasks, todayIso) {
+        Suggest.Vocabulary(
+            notes = snapshot.notes.map { Suggest.NoteRef(it.path, it.title, it.schema, it.updated) },
+            tags = (snapshot.notes.flatMap { it.tags } + snapshot.tasks.flatMap { it.tags }).distinct().sorted(),
+            todayIso = todayIso,
+            index = linkIndex,
+        )
+    }
+    val knownTags = remember(vocabulary) { vocabulary.tags }
 
     // Ticking a box rewrites the draft rather than the file. The two would
     // otherwise race — an unsaved paragraph against a task write straight to
@@ -140,11 +166,30 @@ fun EditorScreen(
         )
     }
 
+    var properties by remember(note.meta.path) { mutableStateOf(false) }
+
+    if (properties) {
+        PropertiesSheet(
+            path = note.meta.path,
+            frontmatter = parsed.frontmatter,
+            schema = note.meta.schema,
+            knownTags = knownTags,
+            // Applied to the draft rather than to the file: the body under it
+            // may be a keystroke ahead of disk, and the autosave carries both.
+            onApply = { changes, remove ->
+                draft = Frontmatter.apply(content, changes, remove)
+                properties = false
+            },
+            onDismiss = { properties = false },
+        )
+    }
+
     if (mode == EditorMode.Source) {
         SourceEditor(
             content = content,
             path = note.meta.path,
             fontSize = fontSize,
+            vocabulary = vocabulary,
             onChange = { draft = it },
             modifier = modifier,
         )
@@ -174,7 +219,12 @@ fun EditorScreen(
         caret = LiveCaret(startLine + edit.line, edit.col, length)
     }
 
-    /** A keystroke in the open block. Enter is the one that has to be replayed. */
+    /**
+     * A keystroke in the open block. Two edits are recognised by their shape
+     * rather than by a key event, because a soft keyboard hands over a whole new
+     * string: Enter, which the block rules replay, and the second `[` of a
+     * wikilink, which writes its own `]]`.
+     */
     fun onFieldChange(value: TextFieldValue) {
         val block = active ?: return
         val newline = LiveMarkdown.insertedNewline(block.raw, value.text, value.selection.start)
@@ -184,9 +234,11 @@ fun EditorScreen(
             moveCaret(block.startLine, LiveMarkdown.positionAt(edit.raw, edit.caret))
             return
         }
-        setBody(LiveMarkdown.replaceBlock(body, block, value.text))
-        val start = LiveMarkdown.positionAt(value.text, value.selection.min)
-        moveCaret(block.startLine, start, value.selection.length)
+        val closed = Suggest.autoClose(block.raw, value.text, value.selection.start)
+        val text = closed?.text ?: value.text
+        val at = closed?.start ?: value.selection.min
+        setBody(LiveMarkdown.replaceBlock(body, block, text))
+        moveCaret(block.startLine, LiveMarkdown.positionAt(text, at), if (closed != null) 0 else value.selection.length)
     }
 
     fun joinPrevious() {
@@ -212,6 +264,56 @@ fun EditorScreen(
         runCatching { focusRequester.requestFocus() }
     }
 
+    // ---------- what the caret has earned ----------
+
+    val trigger = remember(active?.raw, selection.min, activeIndex) {
+        active?.let { Suggest.triggerAt(it.raw, selection.min) }
+    }
+    val offers = remember(trigger, vocabulary) {
+        trigger?.let { Suggest.candidates(it, vocabulary) } ?: emptyList()
+    }
+
+    fun applySuggestion(candidate: Suggest.Candidate) {
+        val block = active ?: return
+        val where = trigger ?: return
+        val edit = Suggest.accept(block.raw, where, candidate)
+        setBody(LiveMarkdown.replaceBlock(body, block, edit.text))
+        moveCaret(block.startLine, LiveMarkdown.positionAt(edit.text, edit.start))
+        runCatching { focusRequester.requestFocus() }
+    }
+
+    // The checkbox the caret is standing on, if it is standing on one.
+    val threadLine = if (active != null && here != null) here.line else -1
+    val thread = remember(active?.raw, threadLine) {
+        val block = active ?: return@remember null
+        val line = block.raw.split("\n").getOrNull(threadLine - block.startLine) ?: return@remember null
+        Tasks.parseLine(line)
+    }
+    var threadSheet by remember(note.meta.path) { mutableStateOf(false) }
+
+    if (threadSheet && thread != null) {
+        ThreadSheet(
+            target = ThreadTarget(
+                notePath = note.meta.path,
+                noteTitle = note.meta.title,
+                line = threadLine + 1,
+                content = thread.content,
+                status = thread.status,
+                priority = thread.priority,
+                due = thread.due,
+                tags = thread.tags,
+            ),
+            knownTags = knownTags,
+            todayIso = todayIso,
+            onApply = { edits ->
+                setBody(Tasks.updateLine(body, threadLine + 1, edits))
+                caret = LiveCaret(threadLine, 0)
+            },
+            onOpenNote = null,
+            onDismiss = { threadSheet = false },
+        )
+    }
+
     Column(modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -220,15 +322,24 @@ fun EditorScreen(
                 .padding(horizontal = 18.dp)
                 .padding(top = 16.dp, bottom = 48.dp)
         ) {
-            Eyebrow(note.meta.path, Modifier.padding(bottom = 10.dp))
-            Text(
-                note.meta.title,
-                style = Skald.type.title,
-                color = colors.tx0,
-                modifier = Modifier.padding(bottom = 16.dp),
-            )
+            // The path and the title are the way in to everything the note *is*
+            // rather than says: its name on disk, its folder, its schema. None
+            // of that was reachable from a phone before.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Note options") { onNoteMenu() }
+                    .padding(bottom = 12.dp),
+            ) {
+                Eyebrow(note.meta.path, Modifier.padding(bottom = 10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(note.meta.title, style = Skald.type.title, color = colors.tx0, modifier = Modifier.weight(1f))
+                    Text("⋯", style = Skald.type.title, color = colors.tx4)
+                }
+            }
 
-            FrontmatterTablet(note, parsed.frontmatter)
+            FrontmatterTablet(note, parsed.frontmatter) { properties = true }
 
             if (mode == EditorMode.Live) {
                 LiveBlocks(
@@ -289,9 +400,26 @@ fun EditorScreen(
             }
         }
 
-        if (active != null) FormatBar(::applyFormat)
+        if (active != null) {
+            Column {
+                when {
+                    offers.isNotEmpty() -> SuggestionBar(offers, ::applySuggestion)
+                    thread != null -> ThreadHintBar(threadSummary(thread, todayIso)) { threadSheet = true }
+                    else -> Unit
+                }
+                FormatBar(::applyFormat)
+            }
+        }
     }
 }
+
+/** What the bar above the keyboard says about the checkbox you are standing on. */
+private fun threadSummary(task: Tasks.RawTask, todayIso: String): String = buildList {
+    add(task.due?.let { "due ${Dates.label(it, todayIso)}" } ?: "no date")
+    add(task.priority.token)
+    if (task.status != TaskStatus.Open && task.status != TaskStatus.Done) add(task.status.token)
+    if (task.tags.isNotEmpty()) add(task.tags.joinToString(" ") { "#$it" })
+}.joinToString(" · ")
 
 /**
  * One toolbar press, as an edit to a string and a selection. A line break is the
@@ -324,63 +452,74 @@ private fun formatEdit(
 
 /**
  * Typed frontmatter as a single sunken block labelled at the seam, rather than
- * YAML you have to read. Parsed from the draft rather than from the index, so it
- * stays honest while the note is being written.
+ * YAML you have to read — and now a way in rather than a read-out: tapping it
+ * opens the properties sheet, which is where a schema is actually changed. A
+ * note with no frontmatter at all still gets the seam, or the one note that
+ * most needs a schema would be the one with nowhere to set it.
  */
 @Composable
-private fun FrontmatterTablet(note: NotePayload, frontmatter: Map<String, Any?>) {
+private fun FrontmatterTablet(note: NotePayload, frontmatter: Map<String, Any?>, onOpen: () -> Unit) {
     val colors = Skald.colors
-    if (frontmatter.isEmpty()) return
 
-    Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 22.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Edit properties", onClick = onOpen),
+    ) {
         Row(
             Modifier.padding(start = 12.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Rune(note.meta.schema, 13.dp)
-            Eyebrow("schema · ${note.meta.schema.name}", color = colors.tx3)
+            Eyebrow("schema · ${note.meta.schema.name}", color = colors.tx3, modifier = Modifier.weight(1f))
+            Eyebrow(if (frontmatter.isEmpty()) "add properties ›" else "edit ›", color = colors.accent)
         }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(colors.bg1)
-                .border(BorderStroke(1.dp, colors.line), RoundedCornerShape(12.dp))
-                .padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            for ((key, value) in frontmatter) {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(key, style = Skald.type.meta, color = colors.tx3, modifier = Modifier.width(84.dp))
-                    Text(
-                        buildAnnotatedString {
-                            val text = when (value) {
-                                is List<*> -> value.joinToString(" · ") { it.toString() }
-                                null -> "—"
-                                else -> value.toString()
-                            }
-                            if (key == "schema") {
-                                withStyle(SpanStyle(color = colors.accent)) { append(text) }
-                            } else {
-                                append(text)
-                            }
-                        },
-                        style = Skald.type.small,
-                        color = colors.tx1,
-                    )
+        if (frontmatter.isNotEmpty()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.bg1)
+                    .border(BorderStroke(1.dp, colors.line), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 13.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                for ((key, value) in frontmatter) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(key, style = Skald.type.meta, color = colors.tx3, modifier = Modifier.width(84.dp))
+                        Text(
+                            buildAnnotatedString {
+                                val text = when (value) {
+                                    is List<*> -> value.joinToString(" · ") { it.toString() }
+                                    null -> "—"
+                                    else -> value.toString()
+                                }
+                                if (key == "schema") {
+                                    withStyle(SpanStyle(color = colors.accent)) { append(text) }
+                                } else {
+                                    append(text)
+                                }
+                            },
+                            style = Skald.type.small,
+                            color = colors.tx1,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/** Raw Markdown, autosaved, with the same bar on the keyboard. */
+/** Raw Markdown, autosaved, with the same bar — and the same offers — on the keyboard. */
 @Composable
 private fun SourceEditor(
     content: String,
     path: String,
     fontSize: Int,
+    vocabulary: Suggest.Vocabulary,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -391,12 +530,14 @@ private fun SourceEditor(
     // the source view is one long field, so its selection is its own business.
     var value by remember(path) { mutableStateOf(TextFieldValue(content)) }
 
-    fun press(action: FormatAction) {
-        if (action == FormatAction.Done) {
-            focus.clearFocus()
-            return
-        }
-        val edit = formatEdit(action, LiveMarkdown.Kind.Paragraph, value.text, value.selection.min, value.selection.max)
+    val trigger = remember(value.text, value.selection.min) {
+        Suggest.triggerAt(value.text, value.selection.min)
+    }
+    val offers = remember(trigger, vocabulary) {
+        trigger?.let { Suggest.candidates(it, vocabulary) } ?: emptyList()
+    }
+
+    fun put(edit: Formatting.Edit) {
         value = TextFieldValue(edit.text, TextRange(edit.start, edit.end))
         onChange(edit.text)
         // The bar took the caret to reach the button; give it back, or the next
@@ -404,14 +545,28 @@ private fun SourceEditor(
         runCatching { requester.requestFocus() }
     }
 
+    fun press(action: FormatAction) {
+        if (action == FormatAction.Done) {
+            focus.clearFocus()
+            return
+        }
+        put(formatEdit(action, LiveMarkdown.Kind.Paragraph, value.text, value.selection.min, value.selection.max))
+    }
+
     Column(modifier.fillMaxSize()) {
         Eyebrow("Source · $path", Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
         Hairline()
         BasicTextField(
             value = value,
-            onValueChange = {
-                value = it
-                onChange(it.text)
+            onValueChange = { next ->
+                val closed = Suggest.autoClose(value.text, next.text, next.selection.start)
+                if (closed != null) {
+                    value = TextFieldValue(closed.text, TextRange(closed.start))
+                    onChange(closed.text)
+                } else {
+                    value = next
+                    onChange(next.text)
+                }
             },
             textStyle = Skald.type.code.copy(color = colors.tx1, fontSize = (fontSize - 2).sp),
             cursorBrush = SolidColor(colors.accent),
@@ -421,6 +576,9 @@ private fun SourceEditor(
                 .focusRequester(requester)
                 .padding(18.dp),
         )
+        if (offers.isNotEmpty() && trigger != null) {
+            SuggestionBar(offers) { candidate -> put(Suggest.accept(value.text, trigger, candidate)) }
+        }
         FormatBar(::press)
     }
 }

@@ -94,6 +94,8 @@ object Tasks {
         /** `Unset` leaves the due date alone; `Clear` removes it. */
         val due: DueEdit = DueEdit.Unset,
         val priority: TaskPriority? = null,
+        /** Null leaves the tags alone; an empty list takes them all off. */
+        val tags: List<String>? = null,
     )
 
     sealed interface DueEdit {
@@ -122,10 +124,14 @@ object Tasks {
             is DueEdit.Set -> d.value
         }
         val priority = edits.priority ?: existing.priority
+        val tags = edits.tags ?: existing.tags
 
-        lines[idx] = m.groupValues[1] + formatLine(content, status, due, priority, existing.tags)
+        lines[idx] = m.groupValues[1] + formatLine(content, status, due, priority, tags)
         return lines.joinToString("\n")
     }
+
+    /** The single task on a raw line, for a sheet that edits one of them. */
+    fun parseLine(line: String): RawTask? = extract(line).firstOrNull()
 
     /** Serialize a brand-new task line (without leading indentation). */
     fun formatLine(

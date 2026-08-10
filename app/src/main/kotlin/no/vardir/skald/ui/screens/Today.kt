@@ -50,6 +50,7 @@ fun TodayScreen(
     todayIso: String,
     onOpenNote: (String) -> Unit,
     onToggleTask: (String, Int, Boolean) -> Unit,
+    onThreadMenu: (TaskItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Skald.colors
@@ -105,7 +106,7 @@ fun TodayScreen(
         items(openThreads.take(5).size) { index ->
             val task = openThreads[index]
             Box(Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) {
-                ThreadCard(task, todayIso, onOpenNote, onToggleTask)
+                ThreadCard(task, todayIso, onOpenNote, onToggleTask, onThreadMenu)
             }
         }
 
@@ -214,10 +215,16 @@ fun ThreadCard(
     todayIso: String,
     onOpenNote: (String) -> Unit,
     onToggleTask: (String, Int, Boolean) -> Unit,
+    onThreadMenu: (TaskItem) -> Unit,
 ) {
     val colors = Skald.colors
     val overdue = task.isOverdue(todayIso)
-    SkaldCard(onClick = { onOpenNote(task.notePath) }) {
+    // A press goes to the note the line lives in; a long press opens everything
+    // the line itself carries, which is the half a phone could never type.
+    SkaldCard(
+        onClick = { onOpenNote(task.notePath) },
+        onLongClick = { onThreadMenu(task) },
+    ) {
         SkaldCheckbox(
             checked = task.status == TaskStatus.Done,
             onCheckedChange = { onToggleTask(task.notePath, task.line, it) },

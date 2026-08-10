@@ -124,11 +124,12 @@ class VaultRepository(
         reindex()
     }
 
-    suspend fun createNote(folder: String, title: String): String = withContext(Dispatchers.IO) {
-        val path = vault.createNote(folder, title)
-        reindex()
-        path
-    }
+    suspend fun createNote(folder: String, title: String, schema: String? = null): String =
+        withContext(Dispatchers.IO) {
+            val path = vault.createNote(folder, title, schema)
+            reindex()
+            path
+        }
 
     suspend fun deleteNote(path: String) = withContext(Dispatchers.IO) {
         vault.delete(path)
@@ -139,6 +140,55 @@ class VaultRepository(
         val result = vault.rename(from, to)
         reindex()
         result
+    }
+
+    suspend fun moveNote(path: String, folder: String): String? = withContext(Dispatchers.IO) {
+        val result = vault.move(path, folder)
+        reindex()
+        result
+    }
+
+    suspend fun duplicateNote(path: String): String? = withContext(Dispatchers.IO) {
+        val result = vault.duplicate(path)
+        reindex()
+        result
+    }
+
+    /**
+     * Rewrite a note's frontmatter in place. The body is untouched, which is
+     * what lets a properties sheet be a form rather than a second editor.
+     */
+    suspend fun editFrontmatter(
+        path: String,
+        changes: Map<String, Any?> = emptyMap(),
+        remove: Set<String> = emptySet(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        val raw = vault.read(path) ?: return@withContext false
+        val updated = Frontmatter.apply(raw, changes, remove)
+        if (updated == raw) return@withContext false
+        vault.write(path, updated)
+        reindex()
+        true
+    }
+
+    // ---------- folders ----------
+
+    suspend fun createFolder(path: String): Boolean = withContext(Dispatchers.IO) {
+        val made = vault.createFolder(path)
+        if (made) reindex()
+        made
+    }
+
+    suspend fun renameFolder(from: String, to: String): String? = withContext(Dispatchers.IO) {
+        val result = vault.renameFolder(from, to)
+        reindex()
+        result
+    }
+
+    suspend fun deleteFolder(path: String): Boolean = withContext(Dispatchers.IO) {
+        val gone = vault.deleteFolder(path)
+        if (gone) reindex()
+        gone
     }
 
     suspend fun openDaily(): String = withContext(Dispatchers.IO) {
@@ -165,6 +215,17 @@ class VaultRepository(
      */
     suspend fun editTask(path: String, line: Int, edits: Tasks.Edits) = withContext(Dispatchers.IO) {
         if (vault.editTask(path, line, edits)) reindex()
+    }
+
+    /**
+     * Write a new thread into a note — today's page when none is named, made on
+     * the way in if today has not been opened yet.
+     */
+    suspend fun addTask(notePath: String?, line: String): String = withContext(Dispatchers.IO) {
+        val target = notePath?.takeIf { vault.exists(it) } ?: vault.ensureDaily(settings, today())
+        vault.appendLine(target, line)
+        reindex()
+        target
     }
 
     // ---------- settings ----------

@@ -9,12 +9,14 @@ import kotlinx.coroutines.launch
 import no.vardir.skald.core.model.Density
 import no.vardir.skald.core.model.LogoVariant
 import no.vardir.skald.core.model.NotePayload
+import no.vardir.skald.core.model.TaskPriority
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.model.ThemeName
 import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.core.sync.PairingTicket
 import no.vardir.skald.core.sync.SyncDeviceInfo
 import no.vardir.skald.core.sync.SyncStatus
+import no.vardir.skald.core.text.Notes
 import no.vardir.skald.core.text.Tasks
 import no.vardir.skald.data.VaultRepository
 
@@ -39,6 +41,8 @@ data class UiState(
     val syncPaneOpen: Boolean = false,
     val editorMode: EditorMode = EditorMode.Live,
     val marginOpen: Boolean = false,
+    /** Folders shut in the explorer, kept here so a tab change does not reopen them. */
+    val collapsedFolders: Set<String> = emptySet(),
     /** Transient, one-line feedback — the phone equivalent of the status bar. */
     val message: String? = null,
 ) {
@@ -91,6 +95,10 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     }
 
     fun openNote(path: String) = viewModelScope.launch {
+        // Leaving a note with an autosave still pending used to lose whatever
+        // had been typed in the last second of it. Following a link is exactly
+        // when that happens, so the draft lands before the next note is read.
+        landPendingDraft()
         val payload = repository.note(path)
         _ui.value = _ui.value.copy(
             openNote = payload,
@@ -103,6 +111,7 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
 
     fun closeNote() {
         _ui.value = _ui.value.copy(openNote = null, editorMode = EditorMode.Live, marginOpen = false)
+        viewModelScope.launch { landPendingDraft() }
     }
 
     /**
@@ -137,6 +146,11 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
         _ui.value = _ui.value.copy(editorMode = mode)
     }
 
+    fun toggleFolder(path: String) {
+        val shut = _ui.value.collapsedFolders
+        _ui.value = _ui.value.copy(collapsedFolders = if (path in shut) shut - path else shut + path)
+    }
+
     fun setMarginOpen(open: Boolean) {
         _ui.value = _ui.value.copy(marginOpen = open)
     }
@@ -154,32 +168,140 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     fun saveOpenNote(content: String) = viewModelScope.launch {
         val path = _ui.value.openNote?.meta?.path ?: return@launch
         repository.saveNote(path, content)
+        pendingDraft = null
         _ui.value = _ui.value.copy(openNote = repository.note(path))
     }
 
-    fun createNote(folder: String, title: String) = viewModelScope.launch {
-        val path = repository.createNote(folder, title)
+    fun createNote(folder: String, title: String, schema: String? = null) = viewModelScope.launch {
+        val path = repository.createNote(folder, title, schema)
         openNote(path)
     }
 
-    fun deleteOpenNote() = viewModelScope.launch {
-        val path = _ui.value.openNote?.meta?.path ?: return@launch
+    /**
+     * Everything below acts on a path rather than on whatever happens to be
+     * open, so the notes list can offer the same operations from a long press
+     * as the editor does from its own chrome.
+     */
+    fun deleteNote(path: String) = viewModelScope.launch {
+        // A note being written has an unsaved draft; save it first so what lands
+        // in the history is what was on the screen.
+        flushDraft(path)
         repository.deleteNote(path)
-        _ui.value = _ui.value.copy(openNote = null)
-        say("Deleted $path — an earlier version is still in its history")
+        if (_ui.value.openNote?.meta?.path == path) _ui.value = _ui.value.copy(openNote = null)
+        say("Deleted ${Notes.titleFromPath(path)} — an earlier version is kept in its history")
     }
 
-    fun renameOpenNote(newTitle: String) = viewModelScope.launch {
-        val note = _ui.value.openNote ?: return@launch
-        val folder = note.meta.path.substringBeforeLast('/', "")
-        val safe = no.vardir.skald.core.text.Notes.safeFileName(newTitle)
-        if (safe.isEmpty()) return@launch
+    fun deleteOpenNote() {
+        _ui.value.openNote?.let { deleteNote(it.meta.path) }
+    }
+
+    /** Rename the *file*, which is what a wikilink actually points at. */
+    fun renameNote(path: String, newName: String) = viewModelScope.launch {
+        val safe = Notes.safeFileName(newName)
+        if (safe.isEmpty()) {
+            say("A note needs a name")
+            return@launch
+        }
+        val folder = Notes.parentFolder(path)
         val target = if (folder.isEmpty()) "$safe.md" else "$folder/$safe.md"
-        val moved = repository.renameNote(note.meta.path, target)
+        if (target == path) return@launch
+        flushDraft(path)
+        val moved = repository.renameNote(path, target)
         if (moved == null) {
-            say("Could not rename — a note by that name is already there")
+            say("Could not rename — a note called $safe is already there")
         } else {
-            openNote(moved)
+            follow(path, moved)
+            say("Renamed to $safe — every link that pointed here followed")
+        }
+    }
+
+    fun moveNote(path: String, folder: String) = viewModelScope.launch {
+        flushDraft(path)
+        val moved = repository.moveNote(path, folder)
+        if (moved == null) {
+            say("Could not move — a note by that name is already in ${folder.ifEmpty { "the vault root" }}")
+        } else {
+            follow(path, moved)
+            say("Moved to ${folder.ifEmpty { "the vault root" }}")
+        }
+    }
+
+    fun duplicateNote(path: String) = viewModelScope.launch {
+        val copy = repository.duplicateNote(path)
+        if (copy == null) say("Could not copy that note") else openNote(copy)
+    }
+
+    /** Set one frontmatter field — the schema picker, the tag row, the title. */
+    fun editFrontmatter(path: String, changes: Map<String, Any?> = emptyMap(), remove: Set<String> = emptySet()) =
+        viewModelScope.launch {
+            repository.editFrontmatter(path, changes, remove)
+            if (_ui.value.openNote?.meta?.path == path) {
+                _ui.value = _ui.value.copy(openNote = repository.note(path))
+            }
+        }
+
+    /**
+     * Save the open note's pending draft before something structural happens to
+     * it. Renames, moves and deletes all read the file from disk, and an
+     * autosave that had not landed yet would be read as never having been typed.
+     */
+    private suspend fun flushDraft(path: String) {
+        val pending = pendingDraft
+        if (pending != null && pending.first == path) {
+            repository.saveNote(path, pending.second)
+            pendingDraft = null
+        }
+    }
+
+    /** The same, for whatever note is holding one, on the way out of it. */
+    private suspend fun landPendingDraft() {
+        val pending = pendingDraft ?: return
+        pendingDraft = null
+        repository.saveNote(pending.first, pending.second)
+    }
+
+    /** Follow a note that moved, so the editor does not sit on a path that is gone. */
+    private fun follow(from: String, to: String) {
+        if (_ui.value.openNote?.meta?.path == from) openNote(to)
+    }
+
+    /**
+     * The editor's unsaved text, parked here so the operations above can land it
+     * before they touch the file. The editor still owns the autosave itself.
+     */
+    private var pendingDraft: Pair<String, String>? = null
+
+    fun noteDraftChanged(path: String, content: String?) {
+        pendingDraft = if (content == null) null else path to content
+    }
+
+    // ---------- folders ----------
+
+    fun createFolder(path: String) = viewModelScope.launch {
+        val clean = path.trim().trim('/').replace(Regex("""\s*/\s*"""), "/")
+        if (clean.isEmpty()) return@launch
+        if (repository.createFolder(clean)) say("Made $clean") else say("Could not make that folder")
+    }
+
+    fun renameFolder(path: String, newName: String) = viewModelScope.launch {
+        val safe = Notes.safeFileName(newName)
+        if (safe.isEmpty()) return@launch
+        val parent = Notes.parentFolder(path)
+        val target = if (parent.isEmpty()) safe else "$parent/$safe"
+        if (target == path) return@launch
+        val moved = repository.renameFolder(path, target)
+        if (moved == null) {
+            say("Could not rename that folder")
+        } else {
+            say("Renamed to $safe — the notes in it took their links along")
+        }
+    }
+
+    fun deleteFolder(path: String) = viewModelScope.launch {
+        if (repository.deleteFolder(path)) {
+            say("Removed $path")
+        } else {
+            say("That folder still holds notes — move them out first")
         }
     }
 
@@ -205,8 +327,35 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
         }
     }
 
-    fun setTaskStatus(path: String, line: Int, status: TaskStatus) = viewModelScope.launch {
-        repository.editTask(path, line, Tasks.Edits(status = status))
+    fun setTaskStatus(path: String, line: Int, status: TaskStatus) = editThread(path, line, Tasks.Edits(status = status))
+
+    /**
+     * Everything a thread carries, edited at once from the thread sheet — which
+     * is the whole point of it. `@due(2026-06-01) @p(high) @status(working)` is
+     * a syntax nobody is going to thumb correctly, or remember exists.
+     */
+    /** A thread written down from the list, rather than from inside a note. */
+    fun createThread(
+        notePath: String?,
+        content: String,
+        due: String?,
+        priority: TaskPriority,
+        tags: List<String>,
+    ) = viewModelScope.launch {
+        if (content.isBlank()) return@launch
+        val line = Tasks.formatLine(
+            content = content.trim(),
+            status = TaskStatus.Open,
+            due = due,
+            priority = priority,
+            tags = tags,
+        )
+        val target = repository.addTask(notePath, line)
+        say("Written into ${Notes.titleFromPath(target)}")
+    }
+
+    fun editThread(path: String, line: Int, edits: Tasks.Edits) = viewModelScope.launch {
+        repository.editTask(path, line, edits)
         _ui.value.openNote?.let { open ->
             if (open.meta.path == path) _ui.value = _ui.value.copy(openNote = repository.note(path))
         }
