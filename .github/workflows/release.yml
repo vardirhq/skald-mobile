@@ -126,14 +126,22 @@ jobs:
         shell: bash
         env:
           SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
-          SKALD_ANDROID_KEY_ALIAS: ${{ secrets.SKALD_ANDROID_KEY_ALIAS || 'skald' }}
         run: |
           set -euo pipefail
-          keytool -list \
+          if ! keytool -list \
+            -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
+            -storepass "$SKALD_ANDROID_STORE_PASSWORD" >/dev/null 2>&1; then
+            echo 'Release keystore could not be opened. Re-copy SKALD_ANDROID_STORE_PASSWORD from the signing backup.' >&2
+            exit 1
+          fi
+          if ! keytool -list \
             -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
             -storepass "$SKALD_ANDROID_STORE_PASSWORD" \
-            -alias "$SKALD_ANDROID_KEY_ALIAS" >/dev/null
-          printf 'Skald signing preflight passed for alias %s.\n' "$SKALD_ANDROID_KEY_ALIAS"
+            -alias skald >/dev/null 2>&1; then
+            echo 'Release keystore opened, but alias skald was not found.' >&2
+            exit 1
+          fi
+          echo 'Skald signing preflight passed.'
 
       - name: Test core
         run: ./gradlew --no-daemon :core:test
@@ -141,7 +149,6 @@ jobs:
       - name: Build signed APK and AAB
         env:
           SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
-          SKALD_ANDROID_KEY_ALIAS: ${{ secrets.SKALD_ANDROID_KEY_ALIAS || 'skald' }}
         run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
 
       - name: Verify and name release artifacts
