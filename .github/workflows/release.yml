@@ -126,22 +126,26 @@ jobs:
         shell: bash
         env:
           SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
+          SKALD_ANDROID_KEY_PASSWORD: ${{ secrets.SKALD_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if ! keytool -list \
+          keytool -list \
             -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
-            -storepass "$SKALD_ANDROID_STORE_PASSWORD" >/dev/null 2>&1; then
-            echo 'Release keystore could not be opened. Re-copy SKALD_ANDROID_STORE_PASSWORD from the signing backup.' >&2
-            exit 1
-          fi
-          if ! keytool -list \
-            -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
+            -storetype JKS \
             -storepass "$SKALD_ANDROID_STORE_PASSWORD" \
-            -alias skald >/dev/null 2>&1; then
-            echo 'Release keystore opened, but alias skald was not found.' >&2
-            exit 1
-          fi
-          echo 'Skald signing preflight passed.'
+            -alias skald >/dev/null
+
+          PROBE_DIR="$(mktemp -d)"
+          printf 'signing-probe' > "$PROBE_DIR/probe.txt"
+          jar --create --file "$PROBE_DIR/probe.jar" -C "$PROBE_DIR" probe.txt
+          jarsigner \
+            -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
+            -storetype JKS \
+            -storepass "$SKALD_ANDROID_STORE_PASSWORD" \
+            -keypass "$SKALD_ANDROID_KEY_PASSWORD" \
+            "$PROBE_DIR/probe.jar" skald >/dev/null
+          jarsigner -verify "$PROBE_DIR/probe.jar" >/dev/null
+          echo 'Skald JKS signing preflight passed.'
 
       - name: Test core
         run: ./gradlew --no-daemon :core:test
@@ -149,6 +153,7 @@ jobs:
       - name: Build signed APK and AAB
         env:
           SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
+          SKALD_ANDROID_KEY_PASSWORD: ${{ secrets.SKALD_ANDROID_KEY_PASSWORD }}
         run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
 
       - name: Verify and name release artifacts
@@ -164,7 +169,9 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$APKSIGNER" || { echo 'Could not find apksigner'; exit 1; }
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          jarsigner -verify "$AAB"
+          AAB_VERIFY_LOG="$(mktemp)"
+          jarsigner -verify -verbose -certs "$AAB" | tee "$AAB_VERIFY_LOG"
+          grep -q '^jar verified' "$AAB_VERIFY_LOG" || { echo 'The release AAB does not contain a valid signature'; exit 1; }
           mkdir -p dist
           cp "$APK" "dist/Skald-Mobile-$VERSION.apk"
           cp "$AAB" "dist/Skald-Mobile-$VERSION.aab"

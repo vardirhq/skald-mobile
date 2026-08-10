@@ -10,7 +10,12 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+- Android release signing now uses a genuine JKS keystore with separate store and key passwords, matching the proven Boss Fight release setup.
+
 ### Fixed
+
+- Fixed the generated signing backup using PKCS12 despite carrying a `.jks` filename, which caused repeated release credential failures.
+- Signing preflight now verifies both the JKS store password and the private-key password by signing a probe JAR before the Android build starts.
 
 ## [0.2.3] - 2026-08-10
 
