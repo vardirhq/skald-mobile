@@ -10,13 +10,20 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+### Fixed
+
+## [0.2.1] - 2026-08-10
+
+### Added
+
+### Changed
+
 - Debug APKs now install as `no.vardir.skald.dev`, keeping development builds separate from production installs.
 - Release preparation now exercises R8 minification so release-only shrinker failures are caught before tagging.
 
 ### Fixed
 
 - Fixed signed release builds failing in R8 on Tink's compile-time Error Prone annotations.
-
 ## [0.2.0] - 2026-08-10
 
 ### Added
@@ -49,5 +56,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.1.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.1.0
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.0
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.1
