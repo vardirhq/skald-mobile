@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,6 +57,7 @@ import no.vardir.skald.ui.theme.SkaldTheme
  * The shell. A bottom tab bar replaces the desktop's activity rail and surfaces
  * stack instead of sitting in panes — the same system, one thumb.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SkaldShell(
     viewModel: SkaldViewModel,
@@ -74,16 +78,22 @@ fun SkaldShell(
     SkaldTheme(snapshot.settings.theme, snapshot.settings.density) {
         val colors = Skald.colors
         var composing by remember { mutableStateOf(false) }
+        val imeVisible = WindowInsets.isImeVisible
 
         Box(Modifier.fillMaxSize().background(colors.bg2)) {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .imePadding()
+            ) {
                 TopBar(
                     title = topTitle(ui, snapshot),
                     subtitle = topSubtitle(ui, snapshot, syncStatus.pending),
                     inNote = ui.openNote != null,
                     inSettings = ui.settingsOpen,
                     logoVariant = snapshot.settings.logoVariant,
-                    sourceMode = ui.editingSource,
+                    editorMode = ui.editorMode,
                     onBack = {
                         when {
                             ui.syncPaneOpen -> viewModel.setSyncPaneOpen(false)
@@ -93,7 +103,7 @@ fun SkaldShell(
                     },
                     onSearch = { viewModel.setSearchOpen(true) },
                     onSettings = { viewModel.setSettingsOpen(true) },
-                    onToggleSource = { viewModel.setEditingSource(!ui.editingSource) },
+                    onEditorMode = viewModel::setEditorMode,
                 )
                 Hairline()
 
@@ -130,9 +140,8 @@ fun SkaldShell(
                             note = ui.openNote!!,
                             snapshot = snapshot,
                             todayIso = viewModel.today,
-                            editingSource = ui.editingSource,
+                            mode = ui.editorMode,
                             onOpenNote = viewModel::openNote,
-                            onToggleTask = viewModel::toggleTask,
                             onSave = viewModel::saveOpenNote,
                             onOpenExternal = onOpenExternal,
                             onOpenAttachment = onOpenAttachment,
@@ -178,15 +187,18 @@ fun SkaldShell(
                     }
                 }
 
-                if (!ui.settingsOpen && !ui.syncPaneOpen) {
-                    TabBar(
+                // With the keyboard up, the bottom of the screen belongs to
+                // whatever is being typed into — the editor puts its own bar
+                // there, and a tab bar underneath it would only be in the way.
+                when {
+                    imeVisible -> Unit
+                    ui.settingsOpen || ui.syncPaneOpen -> Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+                    else -> TabBar(
                         current = ui.tab,
                         inNote = ui.openNote != null,
                         onSelect = viewModel::selectTab,
                         onSearch = { viewModel.setSearchOpen(true) },
                     )
-                } else {
-                    Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
                 }
             }
 
@@ -240,11 +252,11 @@ private fun TopBar(
     inNote: Boolean,
     inSettings: Boolean,
     logoVariant: no.vardir.skald.core.model.LogoVariant,
-    sourceMode: Boolean,
+    editorMode: EditorMode,
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
-    onToggleSource: () -> Unit,
+    onEditorMode: (EditorMode) -> Unit,
 ) {
     val colors = Skald.colors
     Row(
@@ -279,13 +291,7 @@ private fun TopBar(
         }
 
         if (inNote) {
-            IconButtonSlot(onToggleSource, contentDescription = "Toggle source view") {
-                Text(
-                    if (sourceMode) "aA" else "{ }",
-                    style = Skald.type.meta,
-                    color = if (sourceMode) colors.accent else colors.tx2,
-                )
-            }
+            ModeToggle(editorMode, onEditorMode)
         }
         if (!inSettings) {
             IconButtonSlot(onSearch, contentDescription = "Search") {
@@ -299,6 +305,46 @@ private fun TopBar(
         }
     }
 }
+
+/**
+ * Live, read, source — the desktop's three, in the width a phone's top bar can
+ * spare. Small enough to sit beside the title, and still a 44dp target each.
+ */
+@Composable
+private fun ModeToggle(current: EditorMode, onSelect: (EditorMode) -> Unit) {
+    val colors = Skald.colors
+    Row(
+        Modifier
+            .padding(horizontal = 2.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(colors.bg1)
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        for ((mode, label) in MODES) {
+            val active = mode == current
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (active) colors.bg3 else Color.Transparent)
+                    .clickable(onClickLabel = "$label view") { onSelect(mode) }
+                    .padding(horizontal = 8.dp, vertical = 9.dp),
+            ) {
+                Text(
+                    label,
+                    style = Skald.type.metaSmall,
+                    color = if (active) colors.accent else colors.tx3,
+                )
+            }
+        }
+    }
+}
+
+private val MODES = listOf(
+    EditorMode.Live to "live",
+    EditorMode.Read to "read",
+    EditorMode.Source to "src",
+)
 
 @Composable
 private fun TabBar(current: Tab, inNote: Boolean, onSelect: (Tab) -> Unit, onSearch: () -> Unit) {

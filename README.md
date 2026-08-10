@@ -20,6 +20,14 @@ codes out.
   into Settings later. Joining creates the folder and redeems the pairing code *before*
   anything is written into it — a phone that joins has nothing of its own to publish over
   what is already on the other end.
+- **A live editor** — the desktop's arrangement, re-housed for a thumb: the note stays
+  rendered, and the one block your caret is in shows the Markdown it really is. Tap a
+  block to write in it, tap a link to follow it instead. Enter continues a list, leaves
+  it on an empty item, and stays a plain newline inside a fence. Above the keyboard sits
+  a bar of marks — bold, italic, code, strike, links, wikilinks, bullets, numbers,
+  checkboxes, quotes, headings, fences, rules — where every button is a toggle, because
+  a phone has no ⌘B and finding the way back out from between two asterisks with a thumb
+  is not a thing anyone should have to do. Read and source views are one tap away.
 - **Typed notes** — every note carries a schema (`Note`, `Project`, `Person`, `Daily`,
   `Idea`, `Source`, `Code`, `Place`), from frontmatter or inferred from its folder. Each
   schema wears a monoline rune, drawn on the same 24-grid as the desktop's, that follows
@@ -108,7 +116,8 @@ relay refuses peer downloads, that is where to look.
 core/     Plain Kotlin/JVM. No Android API anywhere, so it compiles and tests
           without an SDK — and could back a desktop or server build unchanged.
   model/      the vault's types
-  text/       frontmatter, threads, wikilinks, schema inference, fuzzy, Markdown
+  text/       frontmatter, threads, wikilinks, schema inference, fuzzy, Markdown,
+              the live editor's block rules and the formatting marks
   vault/      the indexer: raw files in, one VaultSnapshot out
   graph/      the stable constellation layout
   gesh/       bytes, ids, crypto, pairing, the v1 protocol client
@@ -126,7 +135,7 @@ Every screen reads one `VaultSnapshot`. Nothing else parses a note.
 ## Building
 
 ```bash
-./gradlew :core:test        # 82 tests — domain, crypto, protocol, merge, sync
+./gradlew :core:test        # 123 tests — domain, editing, crypto, protocol, merge, sync
 ./gradlew :app:assembleDebug
 ```
 
@@ -135,9 +144,11 @@ than pinning a toolchain, so any recent JDK works.
 
 ## Status
 
-`core` is complete and tested: 82 tests cover frontmatter, threads and their write-back,
+`core` is complete and tested: 123 tests cover frontmatter, threads and their write-back,
 wikilink resolution, the Markdown block rules, sealing and opening events, path validation
-against hostile payloads, the merge rules, and a full end-to-end loop — two vaults pairing,
+against hostile payloads, the live editor's block splitting and caret arithmetic, what Enter
+does in each kind of block, the formatting toggles, the merge rules, and a full end-to-end
+loop — two vaults pairing,
 propagating, deleting, converging, preserving the losing edit, and surviving a restart —
 against an in-memory relay that encodes the protocol as documented.
 
