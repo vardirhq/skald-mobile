@@ -1,0 +1,1 @@
+Release documentation is intentionally kept centered on `docs/RELEASING.md`, `docs/SIGNING.md`, `docs/VERSIONING.md`, and `docs/CHANGELOG_GUIDE.md`. Supporting release behavior lives in the workflows and `tools/release.py` rather than a large documentation tree.
