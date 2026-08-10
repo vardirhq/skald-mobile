@@ -36,14 +36,6 @@ import no.vardir.skald.ui.components.StatusPicker
 import no.vardir.skald.ui.components.TagPicker
 import no.vardir.skald.ui.theme.Skald
 
-/**
- * Writing a thread down, from the list rather than from inside a note.
- *
- * A phone is where a task actually occurs to you, and "open the right note,
- * find the end of it, type a checkbox and then the syntax for a date" is four
- * steps too many. This is one: say the thing, say when, and it lands in today's
- * page unless you point somewhere else.
- */
 @Composable
 fun NewThreadSheet(
     snapshot: VaultSnapshot,
@@ -57,7 +49,6 @@ fun NewThreadSheet(
     var due by remember { mutableStateOf<String?>(null) }
     var priority by remember { mutableStateOf(TaskPriority.Med) }
     var tags by remember { mutableStateOf(emptyList<String>()) }
-    // Null means today's page, which is made on the way in if it is not there.
     var target by remember { mutableStateOf<String?>(null) }
     val focus = remember { FocusRequester() }
 
@@ -76,7 +67,7 @@ fun NewThreadSheet(
         DuePicker(due = due, todayIso = todayIso, onChange = { due = it })
 
         FieldLabel("Priority")
-        PriorityPicker(priority) { priority = it }
+        PriorityPicker(selected = priority, onSelect = { priority = it })
 
         FieldLabel("Tags")
         TagPicker(selected = tags, known = knownTags, onChange = { tags = it })
@@ -97,12 +88,7 @@ fun NewThreadSheet(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(if (target == null) "✓" else "▸", style = Skald.type.meta, color = if (target == null) colors.accent else colors.tx4)
-                    Text(
-                        "Today's page",
-                        style = Skald.type.row,
-                        color = if (target == null) colors.accent else colors.tx1,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Text("Today's page", style = Skald.type.row, color = if (target == null) colors.accent else colors.tx1, modifier = Modifier.weight(1f))
                     Text(todayIso, style = Skald.type.metaSmall, color = colors.tx4)
                 }
             },
@@ -120,11 +106,9 @@ fun NewThreadSheet(
     }
 }
 
-/** One thread, as it stands right now — whatever list or note it came from. */
 data class ThreadTarget(
     val notePath: String,
     val noteTitle: String,
-    /** 1-based, in the raw file. */
     val line: Int,
     val content: String,
     val status: TaskStatus,
@@ -133,14 +117,6 @@ data class ThreadTarget(
     val tags: List<String>,
 )
 
-/**
- * Everything a thread carries, as things to point at.
- *
- * `- [ ] Write the saga @due(2026-06-01) @p(high) @status(working) #editor` is a
- * fine line to type with ten fingers and a manual. On a phone it is four things
- * to get wrong and one thing to forget is possible at all — so here they are,
- * with the syntax written for you on the way out.
- */
 @Composable
 fun ThreadSheet(
     target: ThreadTarget,
@@ -168,10 +144,10 @@ fun ThreadSheet(
         DuePicker(due = due, todayIso = todayIso, onChange = { due = it })
 
         FieldLabel("Priority")
-        PriorityPicker(priority) { priority = it }
+        PriorityPicker(selected = priority, onSelect = { priority = it })
 
         FieldLabel("Status")
-        StatusPicker(status) { status = it }
+        StatusPicker(selected = status, onSelect = { status = it })
 
         FieldLabel("Tags")
         TagPicker(selected = tags, known = knownTags, onChange = { tags = it })

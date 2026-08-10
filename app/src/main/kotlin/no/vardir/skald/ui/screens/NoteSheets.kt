@@ -197,7 +197,7 @@ fun PropertiesSheet(
 
     SkaldSheet(title = "Properties", subtitle = path, onDismiss = onDismiss) {
         FieldLabel("Schema")
-        SchemaPicker(chosen) { chosen = it }
+        SchemaPicker(selected = chosen, onSelect = { chosen = it })
         Text(
             "Written into the note as `schema: ${chosen.name}`. Without it, the folder decides.",
             style = Skald.type.metaSmall,
@@ -396,11 +396,6 @@ fun ConfirmSheet(
     }
 }
 
-/**
- * The folder menu: the same shape as the note one, minus the operations a
- * folder cannot survive. Removing one is offered only while it is empty —
- * a long press should never be able to take a shelf of notes with it.
- */
 private enum class FolderStage { Menu, Rename, Delete }
 
 @Composable
@@ -445,8 +440,7 @@ fun FolderActionsSheet(
             subtitle = path,
             initial = path.substringAfterLast('/'),
             label = "Folder name",
-            hint = "Every note inside moves with it, and every wikilink that named " +
-                "the old folder is rewritten to the new one.",
+            hint = "Everything inside moves with it, and links to its notes follow.",
             onConfirm = {
                 onDismiss()
                 onRename(it)
@@ -455,54 +449,13 @@ fun FolderActionsSheet(
         )
 
         FolderStage.Delete -> ConfirmSheet(
-            title = "Remove $path?",
-            subtitle = "empty folder",
-            body = "Nothing is written in it, so nothing is lost.",
+            title = "Remove ${path.substringAfterLast('/')}?",
+            subtitle = path,
+            body = "The folder is empty. Removing it cannot take a note with it.",
             confirm = "Remove",
             onConfirm = {
                 onDismiss()
                 onDelete()
-            },
-            onDismiss = onDismiss,
-        )
-    }
-}
-
-/** Making a folder: a name, and where it goes. */
-@Composable
-fun NewFolderSheet(
-    snapshot: VaultSnapshot,
-    parent: String,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    var under by remember { mutableStateOf(parent) }
-    val options = remember(snapshot.tree) { folderOptions(snapshot) }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-
-    SkaldSheet(title = "New folder", subtitle = snapshot.vaultName, onDismiss = onDismiss) {
-        FieldLabel("Name")
-        SkaldTextField(
-            value = name,
-            onValueChange = { name = it },
-            placeholder = "Sagas",
-            focusRequester = focus,
-        )
-        FieldLabel("Inside")
-        FolderPicker(
-            options = options,
-            selected = under,
-            rootLabel = snapshot.vaultName,
-            onSelect = { under = it },
-        )
-        SheetButtons(
-            confirm = "Make it",
-            enabled = name.isNotBlank(),
-            onConfirm = {
-                val safe = Notes.safeFileName(name)
-                onConfirm(if (under.isEmpty()) safe else "$under/$safe")
             },
             onDismiss = onDismiss,
         )
