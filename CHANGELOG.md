@@ -10,7 +10,11 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+- Sheet actions now split the width of the sheet and clear a 44dp touch target, instead of sitting as two small words in the bottom-right corner.
+
 ### Fixed
+
+- Fixed the Save and Cancel buttons scrolling away with the fields on long sheets — thread editing, note properties and new note — so reaching Save no longer means scrolling to the very end of the sheet. On short screens they could be pushed off the bottom edge entirely.
 
 ## [0.2.4] - 2026-08-10
 
