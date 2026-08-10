@@ -12,6 +12,8 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Fixed
 
+- Fixed every sheet drawing its bottom edge underneath the Android navigation bar, which left Save and Cancel sitting behind the system buttons.
+
 ## [0.2.5] - 2026-08-10
 
 ### Added
