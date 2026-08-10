@@ -1,20 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The sigil: a right-angle S traced through six nodes. -->
+<!--
+  The sigil: a right-angle S traced through six nodes, with the pivot node
+  carrying the accent. Geometry is kept in the same 24-unit space as
+  SkaldLogo (ui/components/Logo.kt) so the two can be diffed line for line —
+  the group below is the only thing that moves it into the 108dp canvas.
+
+  Scaled 3.1x and centred on the drawn extent (12.3, 12.0), not on the bare
+  24-box, so the mark lands on the middle of the adaptive-icon safe zone
+  rather than drifting off it.
+
+  This doubles as the monochrome layer: tinting flattens the node holes, and
+  the sigil reduces to a beaded S with a heavier pivot, which is what it
+  should look like in one colour anyway.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <group android:translateX="30" android:translateY="30">
+    <group
+        android:scaleX="3.1"
+        android:scaleY="3.1"
+        android:translateX="15.87"
+        android:translateY="16.8">
+
         <path
-            android:pathData="M23,7 L9,7 L9,16 L23,16 L23,27 L9,27"
+            android:pathData="M17,5 L7,5 L7,11.5 L17,11.5 L17,19 L7,19"
             android:strokeColor="#C3CCD8"
-            android:strokeWidth="2.4"
+            android:strokeWidth="1.7"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />
+
+        <!-- The five plain nodes: a ring that punches the trace out of its middle. -->
         <path
-            android:pathData="M23,16 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
-            android:fillColor="#6AE0C6" />
+            android:pathData="M15.5,5 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0
+                              M5.5,5 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0
+                              M5.5,11.5 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0
+                              M15.5,19 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0
+                              M5.5,19 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"
+            android:fillColor="@color/skald_bg"
+            android:strokeColor="#C3CCD8"
+            android:strokeWidth="1.3" />
+
+        <!-- The pivot, solid and a size up. -->
+        <path
+            android:pathData="M14.9,11.5 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0"
+            android:fillColor="#6AE0C6"
+            android:strokeColor="#6AE0C6"
+            android:strokeWidth="1.3" />
     </group>
 </vector>
