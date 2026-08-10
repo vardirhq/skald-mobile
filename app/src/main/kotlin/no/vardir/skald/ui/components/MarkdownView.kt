@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +49,7 @@ import no.vardir.skald.ui.theme.Skald
  * this is only the surface — which means the block rules are tested and this
  * file is free to be about looks.
  */
-class MarkdownContext(
+data class MarkdownContext(
     /** Resolve a wikilink target to a note path, or null when it misses. */
     val resolve: (String) -> String?,
     val openNote: (String) -> Unit,
@@ -52,6 +59,12 @@ class MarkdownContext(
     /** Toggle the thread on this 1-based raw file line. */
     val toggleTask: (Int, Boolean) -> Unit,
     val todayIso: String,
+    /**
+     * The live editor's way in: a tap that hits no link reports the rendered
+     * text before it, which the editor maps back to an offset in the Markdown
+     * underneath. Null in the reading view, where a tap only follows links.
+     */
+    val tapAt: ((String) -> Unit)? = null,
 )
 
 private const val TAG_WIKILINK = "wikilink"
@@ -85,11 +98,12 @@ fun MarkdownView(blocks: List<Markdown.Block>, ctx: MarkdownContext, modifier: M
 private fun HeadingBlock(block: Markdown.Block.Heading, stanza: Int?, ctx: MarkdownContext) {
     val colors = Skald.colors
     when (block.level) {
-        1 -> Text(
+        1 -> LinkedText(
             annotate(block.content, ctx),
-            style = Skald.type.title,
-            color = colors.tx0,
-            modifier = Modifier.padding(top = 18.dp, bottom = 12.dp),
+            ctx,
+            Skald.type.title,
+            colors.tx0,
+            Modifier.padding(top = 18.dp, bottom = 12.dp),
         )
 
         2 -> Row(
@@ -102,14 +116,15 @@ private fun HeadingBlock(block: Markdown.Block.Heading, stanza: Int?, ctx: Markd
                 style = Skald.type.metaSmall,
                 color = colors.accent.copy(alpha = 0.7f),
             )
-            Text(annotate(block.content, ctx), style = Skald.type.heading, color = colors.tx0)
+            LinkedText(annotate(block.content, ctx), ctx, Skald.type.heading, colors.tx0)
         }
 
-        else -> Text(
+        else -> LinkedText(
             annotate(block.content, ctx),
-            style = Skald.type.row.copy(fontWeight = FontWeight.SemiBold),
-            color = colors.tx1,
-            modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
+            ctx,
+            Skald.type.row.copy(fontWeight = FontWeight.SemiBold),
+            colors.tx1,
+            Modifier.padding(top = 18.dp, bottom = 8.dp),
         )
     }
 }
@@ -164,11 +179,12 @@ private fun QuoteBlock(block: Markdown.Block.Quote, ctx: MarkdownContext) {
             .height(IntrinsicSize.Min)
     ) {
         Box(Modifier.width(2.dp).fillMaxHeight().background(colors.accent))
-        Text(
+        LinkedText(
             annotate(block.content, ctx),
-            style = Skald.type.body.copy(fontStyle = FontStyle.Italic),
-            color = colors.tx2,
-            modifier = Modifier.padding(start = 16.dp),
+            ctx,
+            Skald.type.body.copy(fontStyle = FontStyle.Italic),
+            colors.tx2,
+            Modifier.padding(start = 16.dp),
         )
     }
 }
@@ -186,7 +202,7 @@ private fun CalloutBlock(block: Markdown.Block.Callout, ctx: MarkdownContext) {
             .padding(horizontal = 15.dp, vertical = 13.dp),
     ) {
         Eyebrow(block.label, Modifier.padding(bottom = 6.dp), colors.accent)
-        Text(annotate(block.content, ctx), style = Skald.type.row, color = colors.tx1)
+        LinkedText(annotate(block.content, ctx), ctx, Skald.type.row, colors.tx1)
     }
 }
 
@@ -219,12 +235,13 @@ private fun TasksBlock(block: Markdown.Block.Tasks, ctx: MarkdownContext) {
                     },
                 )
                 Column(Modifier.weight(1f)) {
-                    Text(
+                    LinkedText(
                         annotate(task.content, ctx),
-                        style = Skald.type.row.copy(
+                        ctx,
+                        Skald.type.row.copy(
                             textDecoration = if (done) TextDecoration.LineThrough else null,
                         ),
-                        color = if (done) colors.tx3 else colors.tx1,
+                        if (done) colors.tx3 else colors.tx1,
                     )
                     val meta = buildList {
                         if (task.status == TaskStatus.Working) add("working")
@@ -368,19 +385,48 @@ private fun LinkedText(
     color: Color,
     modifier: Modifier = Modifier,
 ) {
-    // A tap anywhere in a paragraph opens its first link. Precise per-character
-    // hit testing is a poor fit for a thumb; a paragraph with one link is the
-    // overwhelmingly common case, and the backlinks sheet covers the rest.
-    val firstWikilink = text.getStringAnnotations(TAG_WIKILINK, 0, text.length).firstOrNull { it.item.isNotEmpty() }
-    val firstLink = text.getStringAnnotations(TAG_LINK, 0, text.length).firstOrNull()
+    val tapAt = ctx.tapAt
+    if (tapAt == null) {
+        // Reading view: a tap anywhere in a paragraph opens its first link.
+        // Precise per-character hit testing is a poor fit for a thumb when the
+        // only thing a tap can do is follow a link, and a paragraph with one
+        // link is the overwhelmingly common case.
+        val firstWikilink = text.getStringAnnotations(TAG_WIKILINK, 0, text.length).firstOrNull { it.item.isNotEmpty() }
+        val firstLink = text.getStringAnnotations(TAG_LINK, 0, text.length).firstOrNull()
+        Text(
+            text,
+            style = style,
+            color = color,
+            modifier = when {
+                firstWikilink != null -> modifier.clickable { ctx.openNote(firstWikilink.item) }
+                firstLink != null -> modifier.clickable { ctx.openExternal(firstLink.item) }
+                else -> modifier
+            },
+        )
+        return
+    }
+
+    // Live editor: a tap has two jobs, so it has to be aimed. Whatever it lands
+    // on wins — a link is followed, anything else opens the block for editing
+    // with the caret under the thumb rather than at the end of the paragraph.
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     Text(
         text,
         style = style,
         color = color,
-        modifier = when {
-            firstWikilink != null -> modifier.clickable { ctx.openNote(firstWikilink.item) }
-            firstLink != null -> modifier.clickable { ctx.openExternal(firstLink.item) }
-            else -> modifier
+        onTextLayout = { layout = it },
+        modifier = modifier.pointerInput(text, tapAt) {
+            detectTapGestures { position ->
+                val offset = layout?.getOffsetForPosition(position)?.coerceIn(0, text.length) ?: text.length
+                val probe = (offset + 1).coerceAtMost(text.length)
+                val wikilink = text.getStringAnnotations(TAG_WIKILINK, offset, probe).firstOrNull { it.item.isNotEmpty() }
+                val link = text.getStringAnnotations(TAG_LINK, offset, probe).firstOrNull()
+                when {
+                    wikilink != null -> ctx.openNote(wikilink.item)
+                    link != null -> ctx.openExternal(link.item)
+                    else -> tapAt(text.text.substring(0, offset))
+                }
+            }
         },
     )
 }
