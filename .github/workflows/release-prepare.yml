@@ -1,0 +1,116 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'How to bump versionName'
+        type: choice
+        options: [patch, minor, major, custom]
+        default: patch
+      version:
+        description: 'Explicit SemVer when bump is custom, e.g. 0.2.0 or 1.0.0-rc.1'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-prepare
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Bump version and open release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve bump
+        id: bump
+        shell: bash
+        env:
+          BUMP: ${{ inputs.bump }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$BUMP" == "custom" ]]; then
+            test -n "$VERSION" || { echo 'Custom bump requires version'; exit 1; }
+            echo "arg=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "arg=$BUMP" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare release metadata
+        id: release
+        shell: bash
+        run: |
+          PREVIOUS="$(python tools/release.py version)"
+          python tools/release.py prepare "${{ steps.bump.outputs.arg }}"
+          VERSION="$(python tools/release.py version)"
+          CODE="$(sed -n 's/^VERSION_CODE=//p' version.properties)"
+          python tools/release.py check --tag "v$VERSION"
+          python tools/release.py notes --version "$VERSION" --out release-notes.md
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "branch=release/v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build release candidate
+        run: ./gradlew --no-daemon :core:test :app:assembleDebug
+
+      - name: Commit release metadata
+        env:
+          BRANCH: ${{ steps.release.outputs.branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CODE: ${{ steps.release.outputs.code }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+          git checkout -B "$BRANCH"
+          git add version.properties CHANGELOG.md
+          git commit -m "Release $VERSION" -m "Bump Skald Mobile to $VERSION (Android versionCode $CODE)."
+          git push --force-with-lease -u origin "$BRANCH"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.release.outputs.branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PREVIOUS: ${{ steps.release.outputs.previous }}
+          CODE: ${{ steps.release.outputs.code }}
+        run: |
+          {
+            echo "Releases Skald Mobile **$VERSION** (from $PREVIOUS), Android versionCode **$CODE**."
+            echo
+            echo '## Changelog'
+            echo
+            cat release-notes.md
+            echo
+            echo '## After merging'
+            echo
+            echo 'Run **Android signed release** with the tag left empty. It verifies metadata, creates the tag, builds and verifies the signed APK/AAB, creates checksums and provenance attestations, then publishes the GitHub Release.'
+          } > pr-body.md
+          EXISTING="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$EXISTING" ]]; then
+            gh pr edit "$EXISTING" --title "Release $VERSION" --body-file pr-body.md
+          else
+            gh pr create --base main --head "$BRANCH" --title "Release $VERSION" --body-file pr-body.md
+          fi

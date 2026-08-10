@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
 }
+
+val versionProperties = Properties().apply {
+    rootProject.file("version.properties").inputStream().use(::load)
+}
+
+val releaseKeystore = providers.environmentVariable("SKALD_ANDROID_KEYSTORE_PATH")
+val releaseStorePassword = providers.environmentVariable("SKALD_ANDROID_STORE_PASSWORD")
+val releaseKeyPassword = providers.environmentVariable("SKALD_ANDROID_KEY_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("SKALD_ANDROID_KEY_ALIAS").orElse("skald")
 
 android {
     namespace = "no.vardir.skald"
@@ -12,13 +23,25 @@ android {
         applicationId = "no.vardir.skald"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = versionProperties.getProperty("VERSION_CODE").toInt()
+        versionName = versionProperties.getProperty("VERSION_NAME")
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore.isPresent) {
+                storeFile = file(releaseKeystore.get())
+                storePassword = releaseStorePassword.orNull
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.orNull
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {

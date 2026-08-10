@@ -1,0 +1,217 @@
+name: Android signed release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release. Leave empty to release the version on main and create its tag.'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark the GitHub Release as a pre-release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release metadata
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      code: ${{ steps.meta.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref || 'main' }}
+          fetch-depth: 0
+
+      - name: Resolve and verify release
+        id: meta
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python tools/release.py version)"
+          if [[ "$EVENT" == "push" ]]; then
+            TAG="$REF_NAME"
+          elif [[ -n "$INPUT_TAG" ]]; then
+            TAG="v${INPUT_TAG#v}"
+          else
+            TAG="v$VERSION"
+          fi
+          python tools/release.py check --tag "$TAG"
+          CODE="$(sed -n 's/^VERSION_CODE=//p' version.properties)"
+          python tools/release.py notes --version "$VERSION" --out release-notes.md
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Require release commit on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          SHA="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$SHA" origin/main || { echo 'Release commit is not on main'; exit 1; }
+
+      - name: Create tag when manually releasing
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$TAG" -m "Skald Mobile ${{ steps.meta.outputs.version }}"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  build:
+    name: Build and verify signed Android artifacts
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SKALD_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" || { echo 'SKALD_ANDROID_KEYSTORE_BASE64 is not configured'; exit 1; }
+          install -m 700 -d "$RUNNER_TEMP/skald-signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/skald-signing/skald-release.jks"
+          chmod 600 "$RUNNER_TEMP/skald-signing/skald-release.jks"
+          test -s "$RUNNER_TEMP/skald-signing/skald-release.jks"
+          echo "SKALD_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/skald-signing/skald-release.jks" >> "$GITHUB_ENV"
+
+      - name: Test core
+        run: ./gradlew --no-daemon :core:test
+
+      - name: Build signed APK and AAB
+        env:
+          SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
+          SKALD_ANDROID_KEY_PASSWORD: ${{ secrets.SKALD_ANDROID_KEY_PASSWORD }}
+          SKALD_ANDROID_KEY_ALIAS: ${{ secrets.SKALD_ANDROID_KEY_ALIAS || 'skald' }}
+        run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
+
+      - name: Verify and name release artifacts
+        shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -f "$APK" || { echo 'No signed release APK was produced'; exit 1; }
+          test -f "$AAB" || { echo 'No signed release AAB was produced'; exit 1; }
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER" || { echo 'Could not find apksigner'; exit 1; }
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          jarsigner -verify "$AAB"
+          mkdir -p dist
+          cp "$APK" "dist/Skald-Mobile-$VERSION.apk"
+          cp "$AAB" "dist/Skald-Mobile-$VERSION.aab"
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.apk
+            dist/*.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skald-mobile-${{ needs.verify.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub Release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: skald-mobile-${{ needs.verify.outputs.version }}
+          path: dist
+
+      - name: Build release body
+        run: |
+          {
+            cat notes/release-notes.md
+            echo
+            echo '## Downloads'
+            echo
+            echo '- **APK**: direct install / sideload build, signed with the Skald Mobile release key.'
+            echo '- **AAB**: Play-compatible release bundle.'
+            echo
+            echo '## Checksums'
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } > body.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || contains(needs.verify.outputs.version, '-') }}
+        run: |
+          set -euo pipefail
+          FLAGS=()
+          [[ "$PRERELEASE" == "true" ]] && FLAGS+=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Skald Mobile $VERSION" --notes-file body.md
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Skald Mobile $VERSION" --notes-file body.md "${FLAGS[@]}"
+          fi
