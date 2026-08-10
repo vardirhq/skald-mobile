@@ -125,14 +125,27 @@ class FileVault(val root: File) : SyncVault {
         target.parentFile?.mkdirs()
         if (!source.renameTo(target)) return null
 
+        // A note whose frontmatter title was the file name is being renamed by
+        // its title as far as the person is concerned — every list, chip and
+        // link label reads that field first. Leaving it behind is why renaming
+        // used to look like it had not worked at all.
+        val oldStem = Notes.titleFromPath(from)
+        val newStem = Notes.titleFromPath(to)
+        if (oldStem != newStem) {
+            val raw = runCatching { target.readText() }.getOrNull()
+            val titled = raw?.let { Frontmatter.parse(it).frontmatter["title"] as? String }
+            if (titled != null && titled.trim() == oldStem) {
+                runCatching { target.writeText(Frontmatter.apply(raw, mapOf("title" to newStem))) }
+            }
+        }
+
         // Every wikilink that pointed at the old note now points at the new one,
         // in whichever form it was written.
-        val oldTitle = Notes.titleFromPath(from)
         for (note in notes()) {
             val rewritten = Wikilinks.rewrite(
                 note.raw,
                 matches = { target1 -> Wikilinks.normalizeTarget(target1) == Wikilinks.normalizeTarget(from) ||
-                    target1.equals(oldTitle, ignoreCase = true) },
+                    target1.equals(oldStem, ignoreCase = true) },
                 rewrite = { written -> Wikilinks.retarget(written, to) },
             )
             if (rewritten != note.raw) write(note.path, rewritten, NoteHistoryReason.External)
@@ -140,9 +153,31 @@ class FileVault(val root: File) : SyncVault {
         return to
     }
 
-    /** Create a note, making its title unique within the folder rather than clobbering. */
-    fun createNote(folder: String, title: String, schema: String? = null): String {
-        val safe = Notes.safeFileName(title).ifEmpty { "Untitled" }
+    /** Move a note into another folder, keeping its file name. `""` is the vault root. */
+    fun move(path: String, folder: String): String? {
+        val name = path.substringAfterLast('/')
+        val target = if (folder.isEmpty()) name else "$folder/$name"
+        if (target == path) return path
+        return rename(path, target)
+    }
+
+    /** A copy beside the original, titled so the two can be told apart. */
+    fun duplicate(path: String): String? {
+        val raw = read(path) ?: return null
+        val stem = Notes.titleFromPath(path)
+        val target = freePath(Notes.parentFolder(path), "$stem copy")
+        val titled = if (Frontmatter.parse(raw).frontmatter["title"] != null) {
+            Frontmatter.apply(raw, mapOf("title" to Notes.titleFromPath(target)))
+        } else {
+            raw
+        }
+        write(target, titled)
+        return target
+    }
+
+    /** The first free `folder/stem.md`, numbered rather than clobbering. */
+    private fun freePath(folder: String, stem: String): String {
+        val safe = Notes.safeFileName(stem).ifEmpty { "Untitled" }
         val dir = if (folder.isEmpty()) "" else "$folder/"
         var candidate = "$dir$safe.md"
         var n = 2
@@ -150,10 +185,64 @@ class FileVault(val root: File) : SyncVault {
             candidate = "$dir$safe $n.md"
             n++
         }
-        val frontmatter = linkedMapOf<String, Any?>("title" to safe)
+        return candidate
+    }
+
+    /** Create a note, making its title unique within the folder rather than clobbering. */
+    fun createNote(folder: String, title: String, schema: String? = null): String {
+        val candidate = freePath(folder, title)
+        val frontmatter = linkedMapOf<String, Any?>("title" to Notes.titleFromPath(candidate))
         if (schema != null) frontmatter["schema"] = schema
         write(candidate, Frontmatter.serialize(frontmatter, "\n"))
         return candidate
+    }
+
+    // ---------- folders ----------
+
+    /** Make a folder, including any parent it needs. Already-there counts as made. */
+    fun createFolder(path: String): Boolean {
+        val dir = fileFor(path.trim().trim('/')) ?: return false
+        if (dir.exists()) return dir.isDirectory
+        return dir.mkdirs()
+    }
+
+    /**
+     * Rename or move a folder, note by note, so every wikilink that pointed into
+     * it follows. Whatever is not a note — attachments, empty subfolders — is
+     * carried across afterwards, and the husk is swept up.
+     */
+    fun renameFolder(from: String, to: String): String? {
+        val source = fileFor(from)?.takeIf { it.isDirectory } ?: return null
+        val target = fileFor(to) ?: return null
+        if (target.exists()) return null
+        if ("$to/".startsWith("$from/")) return null // a folder cannot move inside itself
+
+        for (note in notes().filter { it.path.startsWith("$from/") }) {
+            rename(note.path, to + note.path.removePrefix(from))
+        }
+        if (source.isDirectory) {
+            target.parentFile?.mkdirs()
+            if (!source.renameTo(target)) {
+                source.walkTopDown().filter { it.isFile }.forEach { file ->
+                    val moved = File(target, file.relativeTo(source).invariantSeparatorsPath)
+                    moved.parentFile?.mkdirs()
+                    file.renameTo(moved)
+                }
+                source.deleteRecursively()
+            }
+        }
+        return to
+    }
+
+    /**
+     * Remove a folder that holds nothing. Deleting one that still has notes in
+     * it is not offered: a folder disappearing with its contents is not an
+     * undo anybody expects from a long press.
+     */
+    fun deleteFolder(path: String): Boolean {
+        val dir = fileFor(path)?.takeIf { it.isDirectory } ?: return false
+        if (dir.walkTopDown().any { it.isFile }) return false
+        return dir.deleteRecursively()
     }
 
     /** Today's page in the saga, created on first open. */
@@ -163,6 +252,25 @@ class FileVault(val root: File) : SyncVault {
             write(path, Frontmatter.serialize(linkedMapOf("schema" to "Daily", "created" to todayIso), "\n"))
         }
         return path
+    }
+
+    /**
+     * Append a line to the end of a note, with a blank line between it and
+     * whatever was there. This is how a thread captured from the threads list
+     * lands in a note without anybody having to open it and find the end.
+     */
+    fun appendLine(path: String, line: String): Boolean {
+        val raw = read(path) ?: return false
+        val trimmed = raw.trimEnd('\n')
+        // Straight after an existing checkbox rather than a blank line below it,
+        // so a list of threads stays one list.
+        val glue = when {
+            trimmed.isEmpty() -> ""
+            Tasks.isTaskLine(trimmed.substringAfterLast('\n')) -> "\n"
+            else -> "\n\n"
+        }
+        write(path, "$trimmed$glue$line\n")
+        return true
     }
 
     /** Toggle or edit the thread on a raw file line, and write the note back. */

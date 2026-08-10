@@ -141,6 +141,28 @@ object Wikilinks {
         return "${if (rooted) "/" else ""}$kept${if (keepExt) ".md" else ""}"
     }
 
+    /**
+     * The shortest way to write a link to `path` that still lands on it.
+     *
+     * A wikilink target is a path, not a name — but a path nobody needs is only
+     * noise in a sentence. So the stem is offered while it is unambiguous, one
+     * folder of context is added the day a second note takes the same file name,
+     * and the whole path when even that is not enough. Resolution is asked of
+     * the real index rather than guessed at, so what is written is what the
+     * graph will follow.
+     */
+    fun shortestTarget(path: String, index: LinkIndex?): String {
+        val trimmed = path.replace('\\', '/').replace(Regex("""\.md$""", RegexOption.IGNORE_CASE), "")
+        val segments = trimmed.split('/').filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return trimmed
+        if (index == null) return segments.last()
+        for (i in segments.indices.reversed()) {
+            val candidate = segments.subList(i, segments.size).joinToString("/")
+            if (index.resolve(candidate) == path) return candidate
+        }
+        return trimmed
+    }
+
     /** A short passage around the first mention of `name`, for a backlink row. */
     fun snippetAround(body: String, name: String, radius: Int = 90): String {
         val idx = body.lowercase().indexOf("[[${name.lowercase()}")

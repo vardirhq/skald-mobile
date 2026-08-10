@@ -1,7 +1,9 @@
 package no.vardir.skald.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,127 +11,215 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import no.vardir.skald.core.model.FolderNode
+import no.vardir.skald.core.model.NoteMeta
 import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.ui.components.EmptyState
+import no.vardir.skald.ui.components.Hairline
 import no.vardir.skald.ui.components.Rune
-import no.vardir.skald.ui.components.SkaldRow
 import no.vardir.skald.ui.theme.Skald
 
 /**
- * The explorer. Folders collapse, notes carry their rune, and the count sits
- * where the CSS puts it — right-aligned in the folder header.
+ * The explorer.
+ *
+ * Folders nest here rather than being flattened into headings: a vault with
+ * `Projects/Sagas/Winter` in it has three levels of meaning, and reading them
+ * as three sibling sections loses the one thing a tree is for. Empty folders
+ * show too — you have to be able to see the shelf before you put anything on it.
+ *
+ * A press opens; a long press asks what else. That is the whole of the desktop's
+ * right-click menu, in the one gesture a thumb has spare.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NotesScreen(
     snapshot: VaultSnapshot,
+    collapsed: Set<String>,
     onOpenNote: (String) -> Unit,
+    onToggleFolder: (String) -> Unit,
+    onNoteMenu: (NoteMeta) -> Unit,
+    onFolderMenu: (String) -> Unit,
+    onNewFolder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val collapsed = remember { mutableStateListOf<String>() }
-
-    if (snapshot.notes.isEmpty()) {
-        EmptyState("Nothing written yet", "Tap the button to start the first page of the saga.", modifier)
-        return
-    }
-
-    LazyColumn(modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-        // The root's loose notes come first, then each folder in turn.
-        if (snapshot.tree.notes.isNotEmpty()) {
-            item {
-                FolderSection(
-                    name = snapshot.vaultName,
-                    notes = snapshot.tree.notes,
-                    snapshot = snapshot,
-                    collapsed = false,
-                    onToggle = {},
-                    onOpenNote = onOpenNote,
-                )
-            }
-        }
-        for (folder in flatten(snapshot.tree.folders)) {
-            item(key = folder.path) {
-                FolderSection(
-                    name = folder.path,
-                    notes = folder.notes,
-                    snapshot = snapshot,
-                    collapsed = folder.path in collapsed,
-                    onToggle = { if (folder.path in collapsed) collapsed.remove(folder.path) else collapsed.add(folder.path) },
-                    onOpenNote = onOpenNote,
-                )
-            }
-        }
-        item { Box(Modifier.padding(bottom = 40.dp)) }
-    }
-}
-
-@Composable
-private fun FolderSection(
-    name: String,
-    notes: List<String>,
-    snapshot: VaultSnapshot,
-    collapsed: Boolean,
-    onToggle: () -> Unit,
-    onOpenNote: (String) -> Unit,
-) {
     val colors = Skald.colors
-    Column(Modifier.fillMaxWidth()) {
+    val rows = remember(snapshot.tree, collapsed) { flatten(snapshot.tree, collapsed) }
+
+    Column(modifier.fillMaxWidth()) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(start = 4.dp, end = 4.dp, top = 14.dp, bottom = 6.dp),
+            Modifier.fillMaxWidth().padding(start = 22.dp, end = 10.dp, top = 12.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                name.uppercase(),
+                "${snapshot.stats.notes} notes · ${snapshot.stats.folders} folders",
                 style = Skald.type.eyebrow,
-                color = colors.tx2,
+                color = colors.tx3,
                 modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(notes.size.toString(), style = Skald.type.meta, color = colors.tx4)
+            Text(
+                "＋ Folder",
+                style = Skald.type.metaSmall,
+                color = colors.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .clickable(onClickLabel = "New folder", onClick = onNewFolder)
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
+            )
         }
-        AnimatedVisibility(!collapsed) {
-            Column {
-                for (path in notes) {
-                    val note = snapshot.byPath[path] ?: continue
-                    SkaldRow(onClick = { onOpenNote(path) }) {
-                        Rune(note.schema)
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                note.title,
-                                style = Skald.type.row,
-                                color = colors.tx1,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+        Hairline()
+
+        if (snapshot.notes.isEmpty() && rows.isEmpty()) {
+            EmptyState("Nothing written yet", "Tap the button to start the first page of the saga.")
+            return@Column
+        }
+
+        LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            items(rows, key = { it.key }) { row ->
+                when (row) {
+                    is TreeRow.Folder -> FolderHeader(
+                        node = row.node,
+                        depth = row.depth,
+                        collapsed = row.collapsed,
+                        onToggle = { onToggleFolder(row.node.path) },
+                        onMenu = { onFolderMenu(row.node.path) },
+                    )
+
+                    is TreeRow.Note -> {
+                        val note = snapshot.byPath[row.path]
+                        if (note != null) {
+                            NoteRow(
+                                note = note,
+                                depth = row.depth,
+                                onOpen = { onOpenNote(note.path) },
+                                onMenu = { onNoteMenu(note) },
                             )
-                            if (note.openTaskCount > 0) {
-                                Text(
-                                    "${note.openTaskCount} open ${if (note.openTaskCount == 1) "thread" else "threads"}",
-                                    style = Skald.type.meta,
-                                    color = colors.tx3,
-                                )
-                            }
                         }
-                        Text("›", style = Skald.type.meta, color = colors.tx4)
                     }
                 }
             }
+            item { Box(Modifier.padding(bottom = 88.dp)) }
         }
     }
 }
 
-/** Nested folders read as flat sections on a phone; the path carries the depth. */
-private fun flatten(folders: List<FolderNode>): List<FolderNode> =
-    folders.flatMap { listOf(it) + flatten(it.folders) }.filter { it.notes.isNotEmpty() }
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderHeader(
+    node: FolderNode,
+    depth: Int,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    onMenu: () -> Unit,
+) {
+    val colors = Skald.colors
+    val held = node.allNotes().size
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .combinedClickable(onLongClick = onMenu, onClickLabel = "Open folder", onClick = onToggle)
+            .padding(start = (6 + depth * 15).dp, end = 8.dp, top = 9.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(if (collapsed) "▸" else "▾", style = Skald.type.metaSmall, color = colors.tx3)
+        Text(
+            node.name.uppercase(),
+            style = Skald.type.eyebrow,
+            color = colors.tx2,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (held == 0) {
+            Text("empty", style = Skald.type.metaSmall, color = colors.tx4)
+        } else {
+            Text(held.toString(), style = Skald.type.meta, color = colors.tx4)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NoteRow(note: NoteMeta, depth: Int, onOpen: () -> Unit, onMenu: () -> Unit) {
+    val colors = Skald.colors
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .combinedClickable(onLongClick = onMenu, onClickLabel = "Open note", onClick = onOpen)
+                .padding(start = (10 + depth * 15).dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Rune(note.schema)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    note.title,
+                    style = Skald.type.row,
+                    color = colors.tx1,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val meta = noteMeta(note)
+                if (meta.isNotEmpty()) Text(meta, style = Skald.type.meta, color = colors.tx3, maxLines = 1)
+            }
+            Text("⋯", style = Skald.type.row, color = colors.tx4, modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClickLabel = "What can be done with this note", onClick = onMenu)
+                .padding(horizontal = 10.dp, vertical = 6.dp))
+        }
+        Box(Modifier.padding(start = (10 + depth * 15).dp)) { Hairline() }
+    }
+}
+
+private fun noteMeta(note: NoteMeta): String = buildList {
+    if (note.openTaskCount > 0) add("${note.openTaskCount} open ${if (note.openTaskCount == 1) "thread" else "threads"}")
+    if (note.tags.isNotEmpty()) add(note.tags.take(2).joinToString(" ") { "#$it" })
+}.joinToString(" · ")
+
+/** One line of the tree as the list draws it. */
+private sealed interface TreeRow {
+    val key: String
+
+    data class Folder(val node: FolderNode, val depth: Int, val collapsed: Boolean) : TreeRow {
+        override val key: String get() = "d:${node.path}"
+    }
+
+    data class Note(val path: String, val depth: Int) : TreeRow {
+        override val key: String get() = "n:$path"
+    }
+}
+
+/**
+ * The tree as a flat list of visible rows. A collapsed folder keeps its header
+ * and hides everything under it, children included — which is what makes the
+ * chevron worth having on a deep vault.
+ */
+private fun flatten(tree: FolderNode, collapsed: Set<String>): List<TreeRow> {
+    val out = mutableListOf<TreeRow>()
+
+    fun walk(node: FolderNode, depth: Int) {
+        for (path in node.notes) out += TreeRow.Note(path, depth)
+        for (child in node.folders) {
+            val shut = child.path in collapsed
+            out += TreeRow.Folder(child, depth, shut)
+            if (!shut) walk(child, depth + 1)
+        }
+    }
+
+    walk(tree, 0)
+    return out
+}

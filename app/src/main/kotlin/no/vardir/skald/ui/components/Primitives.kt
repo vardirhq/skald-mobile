@@ -2,9 +2,11 @@ package no.vardir.skald.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,11 +62,19 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier, color: Color = Skald.co
     Text(text.uppercase(), style = Skald.type.eyebrow, color = color, modifier = modifier)
 }
 
-/** A raised row: `bg1` on a hairline, rounded, tappable. */
+/**
+ * A raised row: `bg1` on a hairline, rounded, tappable.
+ *
+ * A long press is the phone's right-click, so every card that stands for
+ * something — a note, a thread — can offer what else can be done with it
+ * without spending width on a button.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SkaldCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     padding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -75,7 +85,13 @@ fun SkaldCard(
             .clip(RoundedCornerShape(Skald.metrics.card))
             .background(colors.bg1)
             .border(BorderStroke(1.dp, colors.line), RoundedCornerShape(Skald.metrics.card))
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .let {
+                when {
+                    onClick == null -> it
+                    onLongClick == null -> it.clickable(onClick = onClick)
+                    else -> it.combinedClickable(onLongClick = onLongClick, onClick = onClick)
+                }
+            }
             .padding(padding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

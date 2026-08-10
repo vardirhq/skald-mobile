@@ -43,11 +43,17 @@ import no.vardir.skald.ui.components.Rune
 import no.vardir.skald.ui.components.SkaldLogo
 import no.vardir.skald.ui.screens.ConstellationScreen
 import no.vardir.skald.ui.screens.EditorScreen
+import no.vardir.skald.ui.screens.FolderActionsSheet
 import no.vardir.skald.ui.screens.HallHit
 import no.vardir.skald.ui.screens.HallSheet
+import no.vardir.skald.ui.screens.NewFolderSheet
+import no.vardir.skald.ui.screens.NewThreadSheet
+import no.vardir.skald.ui.screens.NoteActionsSheet
 import no.vardir.skald.ui.screens.NotesScreen
 import no.vardir.skald.ui.screens.SettingsScreen
 import no.vardir.skald.ui.screens.SyncPane
+import no.vardir.skald.ui.screens.ThreadSheet
+import no.vardir.skald.ui.screens.ThreadTarget
 import no.vardir.skald.ui.screens.ThreadsScreen
 import no.vardir.skald.ui.screens.TodayScreen
 import no.vardir.skald.ui.theme.Skald
@@ -77,8 +83,20 @@ fun SkaldShell(
 
     SkaldTheme(snapshot.settings.theme, snapshot.settings.density) {
         val colors = Skald.colors
-        var composing by remember { mutableStateOf(false) }
+        // The sheets. Each one is held as the thing it acts on rather than as a
+        // copy of it, so a reindex underneath — a sync landing, a rename — is
+        // reflected in the open sheet instead of stranding it on stale data.
+        var composing by remember { mutableStateOf<String?>(null) }
+        var noteMenu by remember { mutableStateOf<String?>(null) }
+        var folderMenu by remember { mutableStateOf<String?>(null) }
+        var newFolderUnder by remember { mutableStateOf<String?>(null) }
+        var threadMenu by remember { mutableStateOf<String?>(null) }
+        var newThread by remember { mutableStateOf(false) }
         val imeVisible = WindowInsets.isImeVisible
+
+        val knownTags = remember(snapshot.notes, snapshot.tasks) {
+            (snapshot.notes.flatMap { it.tags } + snapshot.tasks.flatMap { it.tags }).distinct().sorted()
+        }
 
         Box(Modifier.fillMaxSize().background(colors.bg2)) {
             Column(
@@ -143,8 +161,10 @@ fun SkaldShell(
                             mode = ui.editorMode,
                             onOpenNote = viewModel::openNote,
                             onSave = viewModel::saveOpenNote,
+                            onDraftChanged = viewModel::noteDraftChanged,
                             onOpenExternal = onOpenExternal,
                             onOpenAttachment = onOpenAttachment,
+                            onNoteMenu = { noteMenu = ui.openNote?.meta?.path },
                         )
 
                         else -> when (ui.tab) {
@@ -153,25 +173,39 @@ fun SkaldShell(
                                 todayIso = viewModel.today,
                                 onOpenNote = viewModel::openNote,
                                 onToggleTask = viewModel::toggleTask,
+                                onThreadMenu = { threadMenu = it.id },
                             )
 
-                            Tab.Notes -> NotesScreen(snapshot, viewModel::openNote)
+                            Tab.Notes -> NotesScreen(
+                                snapshot = snapshot,
+                                collapsed = ui.collapsedFolders,
+                                onOpenNote = viewModel::openNote,
+                                onToggleFolder = viewModel::toggleFolder,
+                                onNoteMenu = { noteMenu = it.path },
+                                onFolderMenu = { folderMenu = it },
+                                onNewFolder = { newFolderUnder = "" },
+                            )
 
                             Tab.Threads -> ThreadsScreen(
                                 snapshot = snapshot,
                                 todayIso = viewModel.today,
                                 onOpenNote = viewModel::openNote,
                                 onToggleTask = viewModel::toggleTask,
+                                onThreadMenu = { threadMenu = it.id },
                             )
 
                             Tab.Constellation -> ConstellationScreen(snapshot, viewModel::openNote)
                         }
                     }
 
-                    // The compose FAB, on the surfaces where writing is the point.
+                    // The compose button, on the surfaces where writing is the
+                    // point. On the threads list it writes a thread instead of a
+                    // note — the same gesture for the same intent, aimed at
+                    // whatever the surface is actually about.
                     if (ui.openNote == null && !ui.settingsOpen && !ui.syncPaneOpen &&
-                        (ui.tab == Tab.Notes || ui.tab == Tab.Today)
+                        (ui.tab == Tab.Notes || ui.tab == Tab.Today || ui.tab == Tab.Threads)
                     ) {
+                        val writingThread = ui.tab == Tab.Threads
                         Box(
                             Modifier
                                 .align(Alignment.BottomEnd)
@@ -179,10 +213,12 @@ fun SkaldShell(
                                 .size(56.dp)
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(colors.accent)
-                                .clickable(onClickLabel = "New note") { composing = true },
+                                .clickable(onClickLabel = if (writingThread) "New thread" else "New note") {
+                                    if (writingThread) newThread = true else composing = ""
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("+", style = Skald.type.title, color = colors.onAccent)
+                            Text(if (writingThread) "☑" else "+", style = Skald.type.title, color = colors.onAccent)
                         }
                     }
                 }
@@ -217,14 +253,100 @@ fun SkaldShell(
                 )
             }
 
-            if (composing) {
-                ComposeDialog(
-                    folders = snapshot.tree.folders.map { it.path },
-                    onDismiss = { composing = false },
-                    onCreate = { folder, title ->
-                        composing = false
-                        viewModel.createNote(folder, title)
+            composing?.let { startFolder ->
+                ComposeSheet(
+                    snapshot = snapshot,
+                    startFolder = startFolder,
+                    onDismiss = { composing = null },
+                    onCreate = { folder, title, schema ->
+                        composing = null
+                        viewModel.createNote(folder, title, schema)
                     },
+                    onNewFolder = { newFolderUnder = startFolder },
+                )
+            }
+
+            // A long press anywhere a note is listed, and the same menu from the
+            // editor's own title — one place that knows what can be done with a
+            // note, rather than a rename hidden in one surface and a delete in
+            // another.
+            noteMenu?.let { path ->
+                // Looked up rather than captured: a sheet left open across a
+                // reindex should show what the vault says now, and one whose
+                // note is gone should simply not draw.
+                snapshot.byPath[path]?.let { note ->
+                    NoteActionsSheet(
+                        note = note,
+                        snapshot = snapshot,
+                        onOpen = { viewModel.openNote(path) },
+                        onRename = { viewModel.renameNote(path, it) },
+                        onMove = { viewModel.moveNote(path, it) },
+                        onDuplicate = { viewModel.duplicateNote(path) },
+                        onSetPinned = { viewModel.setPinnedNote(if (it) path else null) },
+                        onEditFrontmatter = { changes, remove -> viewModel.editFrontmatter(path, changes, remove) },
+                        onDelete = { viewModel.deleteNote(path) },
+                        onDismiss = { noteMenu = null },
+                    )
+                }
+            }
+
+            folderMenu?.let { path ->
+                FolderActionsSheet(
+                    path = path,
+                    noteCount = snapshot.notes.count { it.path.startsWith("$path/") },
+                    onNewNote = { composing = path },
+                    onNewSubfolder = { newFolderUnder = path },
+                    onRename = { viewModel.renameFolder(path, it) },
+                    onDelete = { viewModel.deleteFolder(path) },
+                    onDismiss = { folderMenu = null },
+                )
+            }
+
+            newFolderUnder?.let { parent ->
+                NewFolderSheet(
+                    snapshot = snapshot,
+                    parent = parent,
+                    onConfirm = {
+                        newFolderUnder = null
+                        viewModel.createFolder(it)
+                    },
+                    onDismiss = { newFolderUnder = null },
+                )
+            }
+
+            // The thread sheet is looked up by id every time it draws, so ticking
+            // a box or renaming its note underneath does not strand it.
+            threadMenu?.let { id ->
+                snapshot.tasks.firstOrNull { it.id == id }?.let { task ->
+                    ThreadSheet(
+                        target = ThreadTarget(
+                            notePath = task.notePath,
+                            noteTitle = task.noteTitle,
+                            line = task.line,
+                            content = task.content,
+                            status = task.status,
+                            priority = task.priority,
+                            due = task.due,
+                            tags = task.tags,
+                        ),
+                        knownTags = knownTags,
+                        todayIso = viewModel.today,
+                        onApply = { viewModel.editThread(task.notePath, task.line, it) },
+                        onOpenNote = { viewModel.openNote(task.notePath) },
+                        onDismiss = { threadMenu = null },
+                    )
+                }
+            }
+
+            if (newThread) {
+                NewThreadSheet(
+                    snapshot = snapshot,
+                    todayIso = viewModel.today,
+                    knownTags = knownTags,
+                    onCreate = { path, content, due, priority, tags ->
+                        viewModel.createThread(path, content, due, priority, tags)
+                    },
+                    onDismiss = { newThread = false },
                 )
             }
 

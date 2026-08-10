@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import no.vardir.skald.core.model.TaskItem
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.ui.components.EmptyState
@@ -32,6 +33,7 @@ fun ThreadsScreen(
     todayIso: String,
     onOpenNote: (String) -> Unit,
     onToggleTask: (String, Int, Boolean) -> Unit,
+    onThreadMenu: (TaskItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var filter by remember { mutableStateOf<TaskStatus?>(null) }
@@ -73,7 +75,7 @@ fun ThreadsScreen(
                 }
                 items(tasks, key = { it.id }) { task ->
                     Box(Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) {
-                        ThreadCard(task, todayIso, onOpenNote, onToggleTask)
+                        ThreadCard(task, todayIso, onOpenNote, onToggleTask, onThreadMenu)
                     }
                 }
             }
