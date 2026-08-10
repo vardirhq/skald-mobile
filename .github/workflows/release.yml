@@ -122,13 +122,25 @@ jobs:
           test -s "$RUNNER_TEMP/skald-signing/skald-release.jks"
           echo "SKALD_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/skald-signing/skald-release.jks" >> "$GITHUB_ENV"
 
+      - name: Validate signing key
+        shell: bash
+        env:
+          SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
+          SKALD_ANDROID_KEY_ALIAS: ${{ secrets.SKALD_ANDROID_KEY_ALIAS || 'skald' }}
+        run: |
+          set -euo pipefail
+          keytool -list \
+            -keystore "$SKALD_ANDROID_KEYSTORE_PATH" \
+            -storepass "$SKALD_ANDROID_STORE_PASSWORD" \
+            -alias "$SKALD_ANDROID_KEY_ALIAS" >/dev/null
+          printf 'Skald signing preflight passed for alias %s.\n' "$SKALD_ANDROID_KEY_ALIAS"
+
       - name: Test core
         run: ./gradlew --no-daemon :core:test
 
       - name: Build signed APK and AAB
         env:
           SKALD_ANDROID_STORE_PASSWORD: ${{ secrets.SKALD_ANDROID_STORE_PASSWORD }}
-          SKALD_ANDROID_KEY_PASSWORD: ${{ secrets.SKALD_ANDROID_KEY_PASSWORD }}
           SKALD_ANDROID_KEY_ALIAS: ${{ secrets.SKALD_ANDROID_KEY_ALIAS || 'skald' }}
         run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
 
