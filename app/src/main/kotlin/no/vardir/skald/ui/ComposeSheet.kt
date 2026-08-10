@@ -90,7 +90,7 @@ fun ComposeSheet(
         )
 
         FieldLabel("Kind")
-        SchemaPicker(schema ?: inferred) { schema = it }
+        SchemaPicker(selected = schema ?: inferred, onSelect = { schema = it })
         Text(
             if (schema == null) {
                 "${inferred.name}, because of where it is going. Tap one to fix it in the note itself."
