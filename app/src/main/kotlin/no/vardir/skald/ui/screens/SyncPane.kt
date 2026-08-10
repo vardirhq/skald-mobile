@@ -162,20 +162,26 @@ fun SyncPane(
                 item {
                     Column(Modifier.padding(top = 26.dp)) {
                         SectionHeader("Actions")
-                        ActionRow("Sync now", "Pull, apply, acknowledge, push", onSyncNow)
+                        ActionRow("Sync now", "Pull, apply, acknowledge, push") { onSyncNow() }
                         ActionRow(
                             if (status.enabled) "Pause automatic sync" else "Resume automatic sync",
                             "Background passes run about twice an hour",
                         ) { onSetEnabled(!status.enabled) }
                         if (status.isRoot) {
-                            ActionRow("Pair another device", "Mints a single-use code and republishes the vault", onMintPairing)
+                            ActionRow(
+                                "Pair another device",
+                                "Mints a single-use code and republishes the vault",
+                            ) { onMintPairing() }
                         }
                         ActionRow(
                             "Republish everything",
                             "For a device that has been away past the relay's retention",
-                            onRepublish,
-                        )
-                        ActionRow("Disconnect", "Forgets the root. Your notes are untouched.", onDisconnect, danger = true)
+                        ) { onRepublish() }
+                        ActionRow(
+                            "Disconnect",
+                            "Forgets the root. Your notes are untouched.",
+                            danger = true,
+                        ) { onDisconnect() }
                     }
                 }
 
@@ -274,7 +280,7 @@ private fun ConnectForm(onPair: () -> Unit, onConnect: (String, String, String) 
             color = colors.tx3,
             modifier = Modifier.padding(bottom = 12.dp),
         )
-        ActionRow("Scan a pairing code", "Uses the camera once, and only for this", onPair)
+        ActionRow("Scan a pairing code", "Uses the camera once, and only for this") { onPair() }
 
         Column(Modifier.padding(top = 30.dp)) {
             SectionHeader("Or start a new root here")
@@ -321,8 +327,9 @@ private fun Field(label: String, placeholder: String, value: String, onChange: (
     }
 }
 
+// `onClick` comes last so a trailing lambda binds to it rather than to `danger`.
 @Composable
-private fun ActionRow(title: String, hint: String, onClick: () -> Unit, danger: Boolean = false) {
+private fun ActionRow(title: String, hint: String, danger: Boolean = false, onClick: () -> Unit) {
     val colors = Skald.colors
     Column {
         Column(

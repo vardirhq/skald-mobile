@@ -58,6 +58,7 @@ class FileVault(val root: File) : SyncVault {
             )
         }
         .sortedBy { it.path }
+        .toList()
 
     /** Every folder that exists on disk, so an empty one still shows in the tree. */
     fun folders(): Set<String> = root.walkTopDown()
