@@ -71,7 +71,7 @@ jobs:
           echo "branch=release/v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Test and build release candidate
-        run: ./gradlew --no-daemon :core:test :app:assembleDebug
+        run: ./gradlew --no-daemon :core:test :app:assembleDebug :app:minifyReleaseWithR8
 
       - name: Commit release metadata
         env:

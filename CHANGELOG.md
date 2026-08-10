@@ -10,7 +10,12 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+- Debug APKs now install as `no.vardir.skald.dev`, keeping development builds separate from production installs.
+- Release preparation now exercises R8 minification so release-only shrinker failures are caught before tagging.
+
 ### Fixed
+
+- Fixed signed release builds failing in R8 on Tink's compile-time Error Prone annotations.
 
 ## [0.2.0] - 2026-08-10
 
@@ -32,6 +37,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 - Corrected stale Compose callback call sites after component API changes.
 - Restored the missing new-folder flow that prevented release builds from compiling.
 - Fixed several editor and sheet integration issues uncovered by CI while bringing the mobile UX together.
+
 ## [0.1.0] - 2026-08-10
 
 ### Added
