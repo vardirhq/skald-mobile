@@ -93,12 +93,14 @@ private fun groupByDue(
     val order = listOf("Overdue", "Today", "Soon", "Later", "No date", "Done")
     return tasks
         .groupBy { task ->
+            // Bound locally: `due` crosses a module boundary, so it cannot smart cast.
+            val due = task.due
             when {
                 task.status == TaskStatus.Done -> "Done"
-                task.due == null -> "No date"
-                task.due < todayIso -> "Overdue"
-                task.due == todayIso -> "Today"
-                task.due <= plusDays(todayIso, 7) -> "Soon"
+                due == null -> "No date"
+                due < todayIso -> "Overdue"
+                due == todayIso -> "Today"
+                due <= plusDays(todayIso, 7) -> "Soon"
                 else -> "Later"
             }
         }

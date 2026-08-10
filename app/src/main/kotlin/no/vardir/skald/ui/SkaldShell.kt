@@ -304,7 +304,7 @@ private fun TabBar(current: Tab, inNote: Boolean, onSelect: (Tab) -> Unit, onSea
                 .fillMaxWidth()
                 .background(colors.bg1)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 8.dp, top = 7.dp, bottom = 10.dp),
+                .padding(start = 8.dp, end = 8.dp, top = 7.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             for (tab in Tab.entries) {

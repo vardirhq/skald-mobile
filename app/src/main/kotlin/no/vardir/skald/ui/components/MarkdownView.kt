@@ -201,7 +201,9 @@ private fun TasksBlock(block: Markdown.Block.Tasks, ctx: MarkdownContext) {
     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         for (task in block.items) {
             val done = task.status == TaskStatus.Done
-            val overdue = task.due != null && task.due < ctx.todayIso && !done
+            // Bound locally: `due` crosses a module boundary, so it cannot smart cast.
+            val due = task.due
+            val overdue = due != null && due < ctx.todayIso && !done
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
