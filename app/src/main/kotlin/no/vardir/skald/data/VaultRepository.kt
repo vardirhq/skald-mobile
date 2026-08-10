@@ -31,11 +31,15 @@ import java.time.LocalDate
 class VaultRepository(
     context: Context,
     private val scope: CoroutineScope,
+    /** Folder under `files/vaults/`, chosen during setup. */
+    vaultDir: String,
+    /** What the person called it, which the folder name may have had to sanitize. */
+    private val vaultName: String,
 ) {
 
     private val appContext = context.applicationContext
 
-    val vault: FileVault = FileVault(File(appContext.filesDir, "vaults/midgard"))
+    val vault: FileVault = FileVault(File(appContext.filesDir, "vaults/$vaultDir"))
 
     private val secrets = KeystoreSecrets(appContext)
 
@@ -54,7 +58,7 @@ class VaultRepository(
     private var settings: VaultSettings = VaultSettings()
 
     private fun emptySnapshot(): VaultSnapshot = VaultIndex.build(
-        vaultName = vault.name,
+        vaultName = vaultName,
         files = emptyList(),
         settings = VaultSettings(),
         todayIso = today(),
@@ -69,7 +73,7 @@ class VaultRepository(
         settings = vault.loadSettings()
         val positions = vault.loadPositions().mapValues { Layout.Point(it.value.first, it.value.second) }
         val built = VaultIndex.build(
-            vaultName = vault.name,
+            vaultName = vaultName,
             files = vault.notes(),
             settings = settings,
             positions = positions,
@@ -84,10 +88,14 @@ class VaultRepository(
         sync.notifyVaultChanged()
     }
 
-    /** First run: seed a vault that shows what Skald is, rather than an empty folder. */
-    suspend fun ensureSeeded() = withContext(Dispatchers.IO) {
-        if (vault.notes().isNotEmpty()) return@withContext
+    /**
+     * Writes the sample vault. Only ever called from setup, and only when it was
+     * asked for: these notes are examples, not the person's, and a vault that
+     * refills itself with them is one nobody can empty.
+     */
+    suspend fun seed() = withContext(Dispatchers.IO) {
         SeedVault.write(vault, today())
+        reindex()
     }
 
     // ---------- notes ----------

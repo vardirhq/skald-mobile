@@ -52,7 +52,6 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            repository.ensureSeeded()
             repository.reindex()
             _ui.value = _ui.value.copy(loading = false, marginOpen = false)
         }

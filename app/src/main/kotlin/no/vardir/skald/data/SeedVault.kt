@@ -3,9 +3,12 @@ package no.vardir.skald.data
 import no.vardir.skald.core.model.NoteHistoryReason
 
 /**
- * A first-run vault, written as real Markdown files rather than mock data —
- * so everything the screens show is something the indexer actually derived,
- * and deleting a note actually deletes it.
+ * The sample vault, offered during setup and written only when it is chosen.
+ * Real Markdown files rather than mock data, so everything the screens show is
+ * something the indexer actually derived, and deleting a note deletes it.
+ *
+ * Never write this into a vault that is about to pair: these notes are nobody's,
+ * and a first sync pass would publish them into the vault on the other end.
  */
 object SeedVault {
 

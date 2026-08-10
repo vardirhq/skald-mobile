@@ -14,6 +14,12 @@ codes out.
 
 ## What it does
 
+- **Setup, on first run** — name a vault, then choose how it starts: empty, joined to a
+  vault you already have, or holding a sample vault to look around in. Empty and sample
+  go on to offer sync straight away, so owning a root is one screen rather than a trip
+  into Settings later. Joining creates the folder and redeems the pairing code *before*
+  anything is written into it — a phone that joins has nothing of its own to publish over
+  what is already on the other end.
 - **Typed notes** — every note carries a schema (`Note`, `Project`, `Person`, `Daily`,
   `Idea`, `Source`, `Code`, `Place`), from frontmatter or inferred from its folder. Each
   schema wears a monoline rune, drawn on the same 24-grid as the desktop's, that follows
@@ -78,6 +84,10 @@ would be the same GESH device id twice.
 1. On the desktop: **Settings → Sync → Pair a device**.
 2. Here: **Settings → Sync → Scan a pairing code**, or just point the system camera at
    it — the `gesh://pair` link opens the app directly.
+
+On a phone that has not been set up yet, both routes land in setup instead, which pairs
+before the vault holds anything. A `gesh://pair` link opening a fresh install asks only
+for a vault name and then joins.
 
 The phone can also own a root itself (**Create a sync root**), in which case it holds the
 authority credential and is the only thing that can pair or revoke another device.
