@@ -1,5 +1,6 @@
 package no.vardir.skald.ui.onboarding
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -64,6 +65,9 @@ fun OnboardingScreen(
     LaunchedEffect(invite) { if (invite != null) viewModel.offerInvite(invite) }
     LaunchedEffect(state.done) { if (state.done) onDone() }
 
+    // Back walks the setup steps rather than closing the app mid-way through it.
+    BackHandler(enabled = state.canGoBack) { viewModel.back() }
+
     SkaldTheme(ThemeName.Midnight, Density.Regular) {
         val colors = Skald.colors
 
@@ -75,10 +79,7 @@ fun OnboardingScreen(
                     .imePadding(),
             ) {
                 if (state.step != SetupStep.Welcome) {
-                    SetupBar(
-                        showBack = !state.committed && !state.busy && state.step != SetupStep.Working,
-                        onBack = viewModel::back,
-                    )
+                    SetupBar(showBack = state.canGoBack, onBack = viewModel::back)
                     Hairline()
                 }
 

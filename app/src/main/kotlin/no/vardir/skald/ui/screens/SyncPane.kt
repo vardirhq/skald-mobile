@@ -1,5 +1,6 @@
 package no.vardir.skald.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -68,6 +69,14 @@ fun SyncPane(
     var mode by remember { mutableStateOf(PaneMode.Overview) }
 
     if (ticket != null && mode != PaneMode.ShowCode) mode = PaneMode.ShowCode
+
+    // The camera and the code are steps within the pane, so back returns to the
+    // overview before the shell's handler gets to close the pane itself. The
+    // ticket has to go with the code, or the line above puts it straight back up.
+    BackHandler(enabled = mode != PaneMode.Overview) {
+        if (mode == PaneMode.ShowCode) onClearTicket()
+        mode = PaneMode.Overview
+    }
 
     when (mode) {
         PaneMode.Scan -> Column(modifier.fillMaxSize()) {
