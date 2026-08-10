@@ -20,6 +20,9 @@ import no.vardir.skald.data.VaultRepository
 
 enum class Tab { Today, Notes, Threads, Constellation }
 
+/** A surface the system back button takes down, one press at a time. */
+enum class BackStep { Search, SyncPane, Settings, Note, HomeTab }
+
 /** What the whole app is showing right now. */
 data class UiState(
     val tab: Tab = Tab.Today,
@@ -32,7 +35,25 @@ data class UiState(
     val marginOpen: Boolean = false,
     /** Transient, one-line feedback — the phone equivalent of the status bar. */
     val message: String? = null,
-)
+) {
+    /**
+     * What one back press should undo, or null when the shell is at rest and the
+     * press belongs to the system — which is the only way out of the app.
+     *
+     * The order is the order the surfaces sit in on the screen: the same
+     * precedence the shell renders them in, with the Hall on top of all of it.
+     * A tab other than Today counts as a step, so the last press before leaving
+     * is always made from the home surface rather than wherever you wandered to.
+     */
+    val backStep: BackStep? get() = when {
+        searchOpen -> BackStep.Search
+        syncPaneOpen -> BackStep.SyncPane
+        settingsOpen -> BackStep.Settings
+        openNote != null -> BackStep.Note
+        tab != Tab.Today -> BackStep.HomeTab
+        else -> null
+    }
+}
 
 class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
 
@@ -76,6 +97,21 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
 
     fun closeNote() {
         _ui.value = _ui.value.copy(openNote = null, editingSource = false, marginOpen = false)
+    }
+
+    /**
+     * The system back button, routed through the same calls the chrome's own back
+     * affordances make, so the two never disagree about where back leads.
+     */
+    fun back() {
+        when (_ui.value.backStep) {
+            BackStep.Search -> setSearchOpen(false)
+            BackStep.SyncPane -> setSyncPaneOpen(false)
+            BackStep.Settings -> setSettingsOpen(false)
+            BackStep.Note -> closeNote()
+            BackStep.HomeTab -> selectTab(Tab.Today)
+            null -> Unit
+        }
     }
 
     fun setSearchOpen(open: Boolean) {

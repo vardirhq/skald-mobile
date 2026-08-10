@@ -37,6 +37,14 @@ data class SetupState(
     val folderName: String get() = vaultFolderName(vaultName)
 
     val nameValid: Boolean get() = vaultName.isNotBlank() && Notes.safeFileName(vaultName).isNotEmpty()
+
+    /**
+     * Whether a step remains behind this one. Drives both the chrome's arrow and
+     * the system back button, so setup cannot offer one route back and not the
+     * other — and so a press on the first step still leaves the app.
+     */
+    val canGoBack: Boolean get() =
+        step != SetupStep.Welcome && step != SetupStep.Working && !committed && !busy
 }
 
 /**

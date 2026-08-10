@@ -1,5 +1,6 @@
 package no.vardir.skald.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -64,6 +65,11 @@ fun SkaldShell(
     val syncStatus by viewModel.syncStatus.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val ticket by viewModel.pairingTicket.collectAsState()
+
+    // Back takes the top surface down rather than the app: only a press made with
+    // nothing stacked falls through to the system. Surfaces that own a stack of
+    // their own — the sync pane, the compose dialog — intercept it first.
+    BackHandler(enabled = ui.backStep != null) { viewModel.back() }
 
     SkaldTheme(snapshot.settings.theme, snapshot.settings.density) {
         val colors = Skald.colors
