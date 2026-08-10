@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Sync credentials are keystore-bound and must never ride a backup to
+             another device: that device would be the same GESH device id twice. -->
+        <exclude domain="sharedpref" path="skald-sync-secrets.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="skald-sync-secrets.xml" />
+    </device-transfer>
+</data-extraction-rules>

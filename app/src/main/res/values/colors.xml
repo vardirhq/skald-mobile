@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- --bg-2 from the Midnight surface, so the first frame is not a white flash. -->
+    <color name="skald_bg">#111620</color>
+    <color name="skald_accent">#6AE0C6</color>
+</resources>

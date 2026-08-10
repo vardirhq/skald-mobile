@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sigil: a right-angle S traced through six nodes. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group android:translateX="30" android:translateY="30">
+        <path
+            android:pathData="M23,7 L9,7 L9,16 L23,16 L23,27 L9,27"
+            android:strokeColor="#C3CCD8"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M23,16 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"
+            android:fillColor="#6AE0C6" />
+    </group>
+</vector>
