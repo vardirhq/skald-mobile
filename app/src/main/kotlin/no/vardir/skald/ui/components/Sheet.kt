@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.ImeAction
@@ -50,12 +51,17 @@ import no.vardir.skald.ui.theme.Skald
  * thumb that reaches the bottom third of the screen and not much else. So every
  * "what can I do with this" in the app arrives the same way — as a sheet with a
  * handle, a title that says what is being acted on, and rows big enough to hit.
+ *
+ * [actions] is that thumb rule applied to the commit: it sits below the scroll,
+ * pinned to the bottom edge, so a long sheet never asks you to scroll to the
+ * end to find Save. Only the fields scroll; the way out of the sheet does not.
  */
 @Composable
 fun SkaldSheet(
     title: String,
     onDismiss: () -> Unit,
     subtitle: String? = null,
+    actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = Skald.colors
@@ -108,12 +114,23 @@ fun SkaldSheet(
                 Column(
                     Modifier
                         .fillMaxWidth()
+                        // Weight first, cap second: the fields take what is left
+                        // over once the header and the pinned actions have had
+                        // their share, so the sheet always fits the screen and
+                        // the commit is never pushed off the bottom edge.
+                        .weight(1f, fill = false)
                         .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 18.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     content = content,
                 )
+                if (actions != null) {
+                    Hairline()
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp)) {
+                        actions()
+                    }
+                }
             }
         }
     }
@@ -204,7 +221,16 @@ fun FieldLabel(text: String, modifier: Modifier = Modifier) {
     Eyebrow(text, modifier.padding(top = 10.dp, bottom = 6.dp))
 }
 
-/** The pair of words a sheet ends on: dismiss on the left, commit on the right. */
+/**
+ * The pair of words a sheet ends on: dismiss on the left, commit on the right.
+ *
+ * They split the width rather than huddling in the right corner — the far
+ * corner of a big phone is the one part of the bottom edge a thumb has to
+ * stretch for, and the commit is the button you press every time.
+ *
+ * Pass this to [SkaldSheet]'s `actions` slot so it stays pinned below the
+ * scrolling fields.
+ */
 @Composable
 fun SheetButtons(
     confirm: String,
@@ -215,27 +241,51 @@ fun SheetButtons(
 ) {
     val colors = Skald.colors
     Row(
-        Modifier.fillMaxWidth().padding(top = 14.dp),
-        horizontalArrangement = Arrangement.End,
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            dismiss,
-            style = Skald.type.row,
-            color = colors.tx2,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onDismiss)
-                .padding(horizontal = 14.dp, vertical = 11.dp),
+        SheetButton(
+            label = dismiss,
+            onClick = onDismiss,
+            modifier = Modifier.weight(1f),
+            border = colors.line2,
+            text = colors.tx2,
         )
-        Text(
-            confirm,
-            style = Skald.type.row,
-            color = if (enabled) colors.accent else colors.tx4,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(enabled = enabled, onClick = onConfirm)
-                .padding(horizontal = 14.dp, vertical = 11.dp),
+        SheetButton(
+            label = confirm,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            enabled = enabled,
+            fill = if (enabled) colors.accentGhost else Color.Transparent,
+            border = if (enabled) colors.accentLine else colors.line,
+            text = if (enabled) colors.accent else colors.tx4,
         )
+    }
+}
+
+/** One half of [SheetButtons]: a word in a box that always clears 44dp. */
+@Composable
+private fun SheetButton(
+    label: String,
+    onClick: () -> Unit,
+    border: Color,
+    text: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    fill: Color = Color.Transparent,
+) {
+    val shape = RoundedCornerShape(11.dp)
+    Box(
+        modifier
+            .heightIn(min = 44.dp)
+            .clip(shape)
+            .background(fill)
+            .border(BorderStroke(1.dp, border), shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = Skald.type.row, color = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

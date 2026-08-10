@@ -54,7 +54,22 @@ fun NewThreadSheet(
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    SkaldSheet(title = "New thread", subtitle = snapshot.vaultName, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = "New thread",
+        subtitle = snapshot.vaultName,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Write it",
+                enabled = content.isNotBlank(),
+                onConfirm = {
+                    onCreate(target, content.trim(), due, priority, tags)
+                    onDismiss()
+                },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         SkaldTextField(
             value = content,
             onValueChange = { content = it },
@@ -93,16 +108,6 @@ fun NewThreadSheet(
                 }
             },
         )
-
-        SheetButtons(
-            confirm = "Write it",
-            enabled = content.isNotBlank(),
-            onConfirm = {
-                onCreate(target, content.trim(), due, priority, tags)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-        )
     }
 }
 
@@ -132,7 +137,33 @@ fun ThreadSheet(
     var due by remember(target.notePath, target.line) { mutableStateOf(target.due) }
     var tags by remember(target.notePath, target.line) { mutableStateOf(target.tags) }
 
-    SkaldSheet(title = "Thread", subtitle = target.noteTitle, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = "Thread",
+        subtitle = target.noteTitle,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Save",
+                onConfirm = {
+                    onApply(
+                        Tasks.Edits(
+                            status = status,
+                            content = content.trim().ifEmpty { target.content },
+                            due = when {
+                                due == null -> Tasks.DueEdit.Clear
+                                due == target.due -> Tasks.DueEdit.Unset
+                                else -> Tasks.DueEdit.Set(due!!)
+                            },
+                            priority = priority,
+                            tags = tags,
+                        )
+                    )
+                    onDismiss()
+                },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         SkaldTextField(
             value = content,
             onValueChange = { content = it },
@@ -159,26 +190,5 @@ fun ThreadSheet(
                 onOpenNote()
             }
         }
-
-        SheetButtons(
-            confirm = "Save",
-            onConfirm = {
-                onApply(
-                    Tasks.Edits(
-                        status = status,
-                        content = content.trim().ifEmpty { target.content },
-                        due = when {
-                            due == null -> Tasks.DueEdit.Clear
-                            due == target.due -> Tasks.DueEdit.Unset
-                            else -> Tasks.DueEdit.Set(due!!)
-                        },
-                        priority = priority,
-                        tags = tags,
-                    )
-                )
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-        )
     }
 }

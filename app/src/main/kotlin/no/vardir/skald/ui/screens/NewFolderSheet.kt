@@ -35,6 +35,14 @@ fun NewFolderSheet(
         title = "New folder",
         subtitle = if (parent.isBlank()) snapshot.vaultName else parent,
         onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Create",
+                enabled = valid,
+                onConfirm = { onConfirm(path) },
+                onDismiss = onDismiss,
+            )
+        },
     ) {
         FieldLabel("Folder name")
         SkaldTextField(
@@ -43,12 +51,6 @@ fun NewFolderSheet(
             placeholder = "Name",
             focusRequester = focus,
             onSubmit = { if (valid) onConfirm(path) },
-        )
-        SheetButtons(
-            confirm = "Create",
-            enabled = valid,
-            onConfirm = { onConfirm(path) },
-            onDismiss = onDismiss,
         )
     }
 }

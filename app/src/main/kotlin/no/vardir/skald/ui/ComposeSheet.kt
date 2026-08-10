@@ -58,7 +58,19 @@ fun ComposeSheet(
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    SkaldSheet(title = "New note", subtitle = snapshot.vaultName, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = "New note",
+        subtitle = snapshot.vaultName,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Write",
+                enabled = title.isNotBlank(),
+                onConfirm = { onCreate(folder, title.trim(), schema?.name) },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         SkaldTextField(
             value = title,
             onValueChange = { title = it },
@@ -100,13 +112,6 @@ fun ComposeSheet(
             style = Skald.type.metaSmall,
             color = colors.tx3,
             modifier = Modifier.padding(top = 6.dp),
-        )
-
-        SheetButtons(
-            confirm = "Write",
-            enabled = title.isNotBlank(),
-            onConfirm = { onCreate(folder, title.trim(), schema?.name) },
-            onDismiss = onDismiss,
         )
     }
 }
