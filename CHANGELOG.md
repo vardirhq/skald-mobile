@@ -10,13 +10,20 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+### Fixed
+
+## [0.2.3] - 2026-08-10
+
+### Added
+
+### Changed
+
 - Release signing now uses the fixed `skald` key alias instead of relying on a configurable GitHub Actions alias secret.
 - Signing validation now distinguishes between an invalid keystore/store password and a missing signing alias before the Android build starts.
 
 ### Fixed
 
 - Fixed the release signing preflight so misconfigured signing credentials fail immediately with an actionable error instead of surfacing later during APK packaging.
-
 ## [0.2.2] - 2026-08-10
 
 ### Added
@@ -76,5 +83,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.1
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.2...HEAD
 [0.2.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.2
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.3
