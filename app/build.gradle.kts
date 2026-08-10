@@ -12,7 +12,6 @@ val versionProperties = Properties().apply {
 
 val releaseKeystore = providers.environmentVariable("SKALD_ANDROID_KEYSTORE_PATH")
 val releaseStorePassword = providers.environmentVariable("SKALD_ANDROID_STORE_PASSWORD")
-val releaseKeyAlias = providers.environmentVariable("SKALD_ANDROID_KEY_ALIAS").orElse("skald")
 
 android {
     namespace = "no.vardir.skald"
@@ -31,7 +30,7 @@ android {
             if (releaseKeystore.isPresent) {
                 storeFile = file(releaseKeystore.get())
                 storePassword = releaseStorePassword.orNull
-                keyAlias = releaseKeyAlias.get()
+                keyAlias = "skald"
                 // The Skald release keystore is PKCS12. PKCS12 uses the store
                 // password for the private-key entry as well.
                 keyPassword = releaseStorePassword.orNull
