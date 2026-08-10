@@ -12,15 +12,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -66,6 +67,17 @@ fun SkaldSheet(
 ) {
     val colors = Skald.colors
     val backdrop = remember { MutableInteractionSource() }
+    // A dialog is its own window, and the insets do not follow it in: ask for
+    // the navigation bar from inside the Dialog and it answers zero, which is
+    // how the commit row came to sit behind the system buttons. The activity is
+    // edge-to-edge, so the bar is measured out here, where the answer is true,
+    // and spent as plain padding inside. The keyboard covers the bar when it is
+    // up and the dialog window gives way to it on its own, so the inset is
+    // spent only while the keyboard is down — otherwise the sheet would float a
+    // navigation bar's worth above the keys.
+    val bar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val keyboard = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val systemBottom = (bar - keyboard).coerceAtLeast(0.dp)
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // The window is the whole screen, so the ground above the sheet is ours
         // to dismiss on — a dialog only closes on a touch outside its own window,
@@ -85,8 +97,10 @@ fun SkaldSheet(
                     .pointerInput(Unit) { detectTapGestures { } }
                     .clip(RoundedCornerShape(topStart = Skald.metrics.sheet, topEnd = Skald.metrics.sheet))
                     .background(colors.bgPop)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(top = 10.dp, bottom = 6.dp),
+                    // Below the padding, so the surface still runs to the screen
+                    // edge and only the content is held clear of the bar.
+                    .padding(bottom = systemBottom)
+                    .padding(top = 10.dp, bottom = 10.dp),
             ) {
                 Box(
                     Modifier
