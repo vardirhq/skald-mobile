@@ -10,12 +10,19 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+### Fixed
+
+## [0.2.2] - 2026-08-10
+
+### Added
+
+### Changed
+
 - Signed release CI now validates the Android signing keystore before starting the expensive build.
 
 ### Fixed
 
 - Fixed PKCS12 release signing by using the keystore password for the private-key entry, matching the generated Skald signing store.
-
 ## [0.2.1] - 2026-08-10
 
 ### Added
@@ -62,5 +69,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.0
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.1...HEAD
 [0.2.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.1
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.2
