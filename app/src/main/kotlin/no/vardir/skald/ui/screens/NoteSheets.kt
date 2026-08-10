@@ -195,7 +195,34 @@ fun PropertiesSheet(
     val dropped = remember(path) { mutableStateListOf<String>() }
     var newKey by remember(path) { mutableStateOf("") }
 
-    SkaldSheet(title = "Properties", subtitle = path, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = "Properties",
+        subtitle = path,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Save",
+                onConfirm = {
+                    val changes = LinkedHashMap<String, Any?>()
+                    val remove = mutableSetOf<String>()
+
+                    changes["schema"] = chosen.name
+                    if (title.isBlank()) remove += "title" else changes["title"] = title.trim()
+                    if (tags.isEmpty()) remove += "tags" else changes["tags"] = tags
+                    for (field in fields) {
+                        changes[field.key] = if (field.list) {
+                            field.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        } else {
+                            field.value.trim()
+                        }
+                    }
+                    remove += dropped.filter { key -> fields.none { it.key == key } }
+                    onApply(changes, remove)
+                },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         FieldLabel("Schema")
         SchemaPicker(selected = chosen, onSelect = { chosen = it })
         Text(
@@ -280,28 +307,6 @@ fun PropertiesSheet(
                     .padding(horizontal = 10.dp, vertical = 10.dp),
             )
         }
-
-        SheetButtons(
-            confirm = "Save",
-            onConfirm = {
-                val changes = LinkedHashMap<String, Any?>()
-                val remove = mutableSetOf<String>()
-
-                changes["schema"] = chosen.name
-                if (title.isBlank()) remove += "title" else changes["title"] = title.trim()
-                if (tags.isEmpty()) remove += "tags" else changes["tags"] = tags
-                for (field in fields) {
-                    changes[field.key] = if (field.list) {
-                        field.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                    } else {
-                        field.value.trim()
-                    }
-                }
-                remove += dropped.filter { key -> fields.none { it.key == key } }
-                onApply(changes, remove)
-            },
-            onDismiss = onDismiss,
-        )
     }
 }
 
@@ -330,7 +335,19 @@ fun RenameSheet(
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    SkaldSheet(title = title, subtitle = subtitle, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = title,
+        subtitle = subtitle,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Rename",
+                enabled = text.isNotBlank() && text.trim() != initial,
+                onConfirm = { onConfirm(text.trim()) },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         FieldLabel(label)
         SkaldTextField(
             value = text,
@@ -344,12 +361,6 @@ fun RenameSheet(
             style = Skald.type.metaSmall,
             color = Skald.colors.tx3,
             modifier = Modifier.padding(top = 8.dp),
-        )
-        SheetButtons(
-            confirm = "Rename",
-            enabled = text.isNotBlank() && text.trim() != initial,
-            onConfirm = { onConfirm(text.trim()) },
-            onDismiss = onDismiss,
         )
     }
 }
@@ -365,18 +376,24 @@ fun MoveSheet(
     var folder by remember(title) { mutableStateOf(current) }
     val options = remember(snapshot.tree) { folderOptions(snapshot) }
 
-    SkaldSheet(title = "Move", subtitle = title, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = "Move",
+        subtitle = title,
+        onDismiss = onDismiss,
+        actions = {
+            SheetButtons(
+                confirm = "Move",
+                enabled = folder != current,
+                onConfirm = { onConfirm(folder) },
+                onDismiss = onDismiss,
+            )
+        },
+    ) {
         FolderPicker(
             options = options,
             selected = folder,
             rootLabel = snapshot.vaultName,
             onSelect = { folder = it },
-        )
-        SheetButtons(
-            confirm = "Move",
-            enabled = folder != current,
-            onConfirm = { onConfirm(folder) },
-            onDismiss = onDismiss,
         )
     }
 }
@@ -390,9 +407,13 @@ fun ConfirmSheet(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    SkaldSheet(title = title, subtitle = subtitle, onDismiss = onDismiss) {
+    SkaldSheet(
+        title = title,
+        subtitle = subtitle,
+        onDismiss = onDismiss,
+        actions = { SheetButtons(confirm = confirm, onConfirm = onConfirm, onDismiss = onDismiss) },
+    ) {
         Text(body, style = Skald.type.small, color = Skald.colors.tx2, modifier = Modifier.padding(vertical = 8.dp))
-        SheetButtons(confirm = confirm, onConfirm = onConfirm, onDismiss = onDismiss)
     }
 }
 
