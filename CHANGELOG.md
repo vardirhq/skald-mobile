@@ -10,7 +10,12 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+- Release signing now uses the fixed `skald` key alias instead of relying on a configurable GitHub Actions alias secret.
+- Signing validation now distinguishes between an invalid keystore/store password and a missing signing alias before the Android build starts.
+
 ### Fixed
+
+- Fixed the release signing preflight so misconfigured signing credentials fail immediately with an actionable error instead of surfacing later during APK packaging.
 
 ## [0.2.2] - 2026-08-10
 
