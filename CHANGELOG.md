@@ -10,13 +10,20 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Changed
 
+### Fixed
+
+## [0.2.4] - 2026-08-10
+
+### Added
+
+### Changed
+
 - Android release signing now uses a genuine JKS keystore with separate store and key passwords, matching the proven Boss Fight release setup.
 
 ### Fixed
 
 - Fixed the generated signing backup using PKCS12 despite carrying a `.jks` filename, which caused repeated release credential failures.
 - Signing preflight now verifies both the JKS store password and the private-key password by signing a probe JAR before the Android build starts.
-
 ## [0.2.3] - 2026-08-10
 
 ### Added
@@ -90,5 +97,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.2
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.3...HEAD
 [0.2.3]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.3
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.4
