@@ -13,3 +13,7 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# Tink references Error Prone annotations that are compile-time metadata only.
+# They are intentionally absent from the Android runtime; suppress R8's missing-class check.
+-dontwarn com.google.errorprone.annotations.**
