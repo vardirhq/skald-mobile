@@ -20,6 +20,12 @@ import no.vardir.skald.data.VaultRepository
 
 enum class Tab { Today, Notes, Threads, Constellation }
 
+/**
+ * The three readings of a note, as the desktop has them: writing in the rendered
+ * page, reading it, and the file itself.
+ */
+enum class EditorMode { Live, Read, Source }
+
 /** A surface the system back button takes down, one press at a time. */
 enum class BackStep { Search, SyncPane, Settings, Note, HomeTab }
 
@@ -31,7 +37,7 @@ data class UiState(
     val searchOpen: Boolean = false,
     val settingsOpen: Boolean = false,
     val syncPaneOpen: Boolean = false,
-    val editingSource: Boolean = false,
+    val editorMode: EditorMode = EditorMode.Live,
     val marginOpen: Boolean = false,
     /** Transient, one-line feedback — the phone equivalent of the status bar. */
     val message: String? = null,
@@ -89,14 +95,14 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
         _ui.value = _ui.value.copy(
             openNote = payload,
             searchOpen = false,
-            editingSource = false,
+            editorMode = EditorMode.Live,
             marginOpen = false,
             message = if (payload == null) "That note is no longer in the vault" else null,
         )
     }
 
     fun closeNote() {
-        _ui.value = _ui.value.copy(openNote = null, editingSource = false, marginOpen = false)
+        _ui.value = _ui.value.copy(openNote = null, editorMode = EditorMode.Live, marginOpen = false)
     }
 
     /**
@@ -127,8 +133,8 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
         if (open) refreshDevices()
     }
 
-    fun setEditingSource(editing: Boolean) {
-        _ui.value = _ui.value.copy(editingSource = editing)
+    fun setEditorMode(mode: EditorMode) {
+        _ui.value = _ui.value.copy(editorMode = mode)
     }
 
     fun setMarginOpen(open: Boolean) {
