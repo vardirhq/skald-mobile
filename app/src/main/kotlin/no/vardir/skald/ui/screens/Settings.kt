@@ -8,11 +8,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import no.vardir.skald.core.model.Density
 import no.vardir.skald.core.model.LogoVariant
+import no.vardir.skald.core.model.SchemaName
 import no.vardir.skald.core.model.ThemeName
 import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.core.sync.SyncPhase
@@ -28,6 +35,8 @@ import no.vardir.skald.ui.components.Hairline
 import no.vardir.skald.ui.components.SectionHeader
 import no.vardir.skald.ui.components.Segmented
 import no.vardir.skald.ui.components.SkaldLogo
+import no.vardir.skald.ui.components.SkaldTextField
+import no.vardir.skald.ui.components.Rune
 import no.vardir.skald.ui.theme.Skald
 
 /**
@@ -43,6 +52,8 @@ fun SettingsScreen(
     onDensity: (Density) -> Unit,
     onLogoVariant: (LogoVariant) -> Unit,
     onEditorFontSize: (Int) -> Unit,
+    onSchemaTemplate: (SchemaName, String) -> Unit,
+    onOpenTrash: () -> Unit,
     onOpenSync: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -58,6 +69,12 @@ fun SettingsScreen(
                     selected = settings.theme,
                     onSelect = onTheme,
                 )
+            }
+        }
+
+        item {
+            Column(Modifier.padding(top = 26.dp)) {
+                SchemaTemplates(snapshot, onSchemaTemplate)
             }
         }
 
@@ -121,6 +138,14 @@ fun SettingsScreen(
                 StatRow("Orphans", snapshot.stats.orphans.toString())
                 StatRow("Daily folder", settings.dailyFolder)
                 StatRow("Attachments", settings.attachmentsFolder)
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpenTrash)
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Recently deleted", style = Skald.type.row, color = colors.tx2, modifier = Modifier.weight(1f))
+                    Text("›", style = Skald.type.meta, color = colors.accent)
+                }
             }
         }
 
@@ -158,6 +183,52 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SchemaTemplates(snapshot: VaultSnapshot, onSave: (SchemaName, String) -> Unit) {
+    var active by remember { mutableStateOf(SchemaName.Note) }
+    var draft by remember { mutableStateOf(snapshot.settings.schemaTemplates[active.name].orEmpty()) }
+    LaunchedEffect(active, snapshot.settings.schemaTemplates) {
+        draft = snapshot.settings.schemaTemplates[active.name].orEmpty()
+    }
+    SectionHeader("Schema templates", "{{title}} · {{date}}")
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SchemaName.entries.chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { schema ->
+                    val chosen = schema == active
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (chosen) Skald.colors.accentGhost else Skald.colors.bg1)
+                            .clickable { active = schema }.padding(vertical = 9.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Rune(schema, 18.dp, if (chosen) Skald.colors.accent else Skald.colors.tx3)
+                        Text(schema.name, style = Skald.type.metaSmall, color = if (chosen) Skald.colors.accent else Skald.colors.tx3)
+                    }
+                }
+            }
+        }
+    }
+    Box(Modifier.padding(top = 8.dp)) {
+        SkaldTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            placeholder = "# {{title}}\n\nCreated {{date}}.",
+            singleLine = false,
+            mono = true,
+            modifier = Modifier.heightIn(min = 120.dp),
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Text(
+            "Save ${active.name}",
+            style = Skald.type.metaSmall,
+            color = Skald.colors.accent,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSave(active, draft) }.padding(10.dp),
+        )
     }
 }
 

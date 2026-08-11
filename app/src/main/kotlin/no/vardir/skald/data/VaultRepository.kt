@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import no.vardir.skald.core.graph.Layout
 import no.vardir.skald.core.model.BacklinkRef
+import no.vardir.skald.core.model.DeletedNoteEntry
 import no.vardir.skald.core.model.NoteHistoryEntry
 import no.vardir.skald.core.model.NotePayload
 import no.vardir.skald.core.model.VaultSettings
@@ -126,7 +127,7 @@ class VaultRepository(
 
     suspend fun createNote(folder: String, title: String, schema: String? = null): String =
         withContext(Dispatchers.IO) {
-            val path = vault.createNote(folder, title, schema)
+            val path = vault.createNote(folder, title, schema, settings, today())
             reindex()
             path
         }
@@ -144,6 +145,18 @@ class VaultRepository(
 
     suspend fun moveNote(path: String, folder: String): String? = withContext(Dispatchers.IO) {
         val result = vault.move(path, folder)
+        reindex()
+        result
+    }
+
+    suspend fun moveNotes(paths: Set<String>, folder: String): Map<String, String>? = withContext(Dispatchers.IO) {
+        val result = vault.moveMany(paths, folder)
+        reindex()
+        result
+    }
+
+    suspend fun deleteNotes(paths: Set<String>): Int = withContext(Dispatchers.IO) {
+        val result = vault.deleteMany(paths)
         reindex()
         result
     }
@@ -205,6 +218,14 @@ class VaultRepository(
     suspend fun restoreVersion(path: String, id: String) = withContext(Dispatchers.IO) {
         vault.restoreVersion(path, id)
         reindex()
+    }
+
+    suspend fun deletedNotes(): List<DeletedNoteEntry> = withContext(Dispatchers.IO) { vault.deletedNotes() }
+
+    suspend fun restoreDeleted(path: String, id: String): Boolean = withContext(Dispatchers.IO) {
+        val restored = vault.restoreDeleted(path, id)
+        if (restored) reindex()
+        restored
     }
 
     // ---------- threads ----------

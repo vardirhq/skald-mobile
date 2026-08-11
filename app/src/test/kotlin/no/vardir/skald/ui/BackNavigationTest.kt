@@ -67,6 +67,16 @@ class BackNavigationTest {
     }
 
     @Test
+    fun `recently deleted closes before returning to the tab`() {
+        assertEquals(BackStep.Trash, UiState(tab = Tab.Notes, trashOpen = true).backStep)
+    }
+
+    @Test
+    fun `explorer selection clears before leaving the tab`() {
+        assertEquals(BackStep.Selection, UiState(tab = Tab.Notes, selectedNotes = setOf("One.md")).backStep)
+    }
+
+    @Test
     fun `setup walks its steps and leaves from the first one`() {
         assertFalse(SetupState(step = SetupStep.Welcome).canGoBack)
         assertTrue(SetupState(step = SetupStep.Name).canGoBack)

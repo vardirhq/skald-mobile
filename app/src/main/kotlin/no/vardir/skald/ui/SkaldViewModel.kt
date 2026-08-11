@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import no.vardir.skald.core.model.Density
+import no.vardir.skald.core.model.DeletedNoteEntry
 import no.vardir.skald.core.model.LogoVariant
 import no.vardir.skald.core.model.NotePayload
 import no.vardir.skald.core.model.TaskPriority
@@ -29,7 +30,7 @@ enum class Tab { Today, Notes, Threads, Constellation }
 enum class EditorMode { Live, Read, Source }
 
 /** A surface the system back button takes down, one press at a time. */
-enum class BackStep { Search, SyncPane, Settings, Note, HomeTab }
+enum class BackStep { Search, Trash, SyncPane, Settings, Note, Selection, HomeTab }
 
 /** What the whole app is showing right now. */
 data class UiState(
@@ -37,12 +38,17 @@ data class UiState(
     val openNote: NotePayload? = null,
     val loading: Boolean = true,
     val searchOpen: Boolean = false,
+    val searchQuery: String = "",
+    val trashOpen: Boolean = false,
+    val deletedNotes: List<DeletedNoteEntry> = emptyList(),
     val settingsOpen: Boolean = false,
     val syncPaneOpen: Boolean = false,
     val editorMode: EditorMode = EditorMode.Live,
     val marginOpen: Boolean = false,
     /** Folders shut in the explorer, kept here so a tab change does not reopen them. */
     val collapsedFolders: Set<String> = emptySet(),
+    /** Long-press selection in the explorer. */
+    val selectedNotes: Set<String> = emptySet(),
     /** Transient, one-line feedback — the phone equivalent of the status bar. */
     val message: String? = null,
 ) {
@@ -57,9 +63,11 @@ data class UiState(
      */
     val backStep: BackStep? get() = when {
         searchOpen -> BackStep.Search
+        trashOpen -> BackStep.Trash
         syncPaneOpen -> BackStep.SyncPane
         settingsOpen -> BackStep.Settings
         openNote != null -> BackStep.Note
+        selectedNotes.isNotEmpty() -> BackStep.Selection
         tab != Tab.Today -> BackStep.HomeTab
         else -> null
     }
@@ -91,7 +99,7 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     // ---------- navigation ----------
 
     fun selectTab(tab: Tab) {
-        _ui.value = _ui.value.copy(tab = tab, openNote = null, searchOpen = false)
+        _ui.value = _ui.value.copy(tab = tab, openNote = null, searchOpen = false, selectedNotes = emptySet())
     }
 
     fun openNote(path: String) = viewModelScope.launch {
@@ -121,16 +129,25 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     fun back() {
         when (_ui.value.backStep) {
             BackStep.Search -> setSearchOpen(false)
+            BackStep.Trash -> setTrashOpen(false)
             BackStep.SyncPane -> setSyncPaneOpen(false)
             BackStep.Settings -> setSettingsOpen(false)
             BackStep.Note -> closeNote()
+            BackStep.Selection -> clearNoteSelection()
             BackStep.HomeTab -> selectTab(Tab.Today)
             null -> Unit
         }
     }
 
-    fun setSearchOpen(open: Boolean) {
-        _ui.value = _ui.value.copy(searchOpen = open)
+    fun setSearchOpen(open: Boolean, query: String? = null) {
+        _ui.value = _ui.value.copy(searchOpen = open, searchQuery = query ?: _ui.value.searchQuery)
+    }
+
+    fun setTrashOpen(open: Boolean) {
+        _ui.value = _ui.value.copy(trashOpen = open)
+        if (open) viewModelScope.launch {
+            _ui.value = _ui.value.copy(deletedNotes = repository.deletedNotes())
+        }
     }
 
     fun setSettingsOpen(open: Boolean) {
@@ -149,6 +166,15 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     fun toggleFolder(path: String) {
         val shut = _ui.value.collapsedFolders
         _ui.value = _ui.value.copy(collapsedFolders = if (path in shut) shut - path else shut + path)
+    }
+
+    fun toggleNoteSelection(path: String) {
+        val selected = _ui.value.selectedNotes
+        _ui.value = _ui.value.copy(selectedNotes = if (path in selected) selected - path else selected + path)
+    }
+
+    fun clearNoteSelection() {
+        _ui.value = _ui.value.copy(selectedNotes = emptySet())
     }
 
     fun setMarginOpen(open: Boolean) {
@@ -175,6 +201,26 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     fun createNote(folder: String, title: String, schema: String? = null) = viewModelScope.launch {
         val path = repository.createNote(folder, title, schema)
         openNote(path)
+    }
+
+    fun moveSelectedNotes(folder: String) = viewModelScope.launch {
+        val selected = _ui.value.selectedNotes
+        if (selected.isEmpty()) return@launch
+        val moved = repository.moveNotes(selected, folder)
+        if (moved == null) say("Could not move the selection — check for duplicate names")
+        else {
+            clearNoteSelection()
+            say("Moved ${moved.size} ${if (moved.size == 1) "note" else "notes"}")
+        }
+    }
+
+    fun deleteSelectedNotes() = viewModelScope.launch {
+        val selected = _ui.value.selectedNotes
+        if (selected.isEmpty()) return@launch
+        selected.forEach { flushDraft(it) }
+        val deleted = repository.deleteNotes(selected)
+        clearNoteSelection()
+        say("Deleted $deleted ${if (deleted == 1) "note" else "notes"} — all can be restored")
     }
 
     /**
@@ -316,6 +362,15 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
         say("Restored an earlier version")
     }
 
+    fun restoreDeleted(path: String, id: String) = viewModelScope.launch {
+        if (repository.restoreDeleted(path, id)) {
+            _ui.value = _ui.value.copy(deletedNotes = repository.deletedNotes())
+            say("Restored ${Notes.titleFromPath(path)}")
+        } else {
+            say("Could not restore — a note already exists at that path")
+        }
+    }
+
     suspend fun history(path: String) = repository.history(path)
 
     // ---------- threads ----------
@@ -375,6 +430,34 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
 
     fun setPinnedNote(path: String?) =
         viewModelScope.launch { repository.updateSettings { it.copy(pinnedNote = path) } }
+
+    fun saveSearch(query: String) = viewModelScope.launch {
+        val clean = query.trim()
+        if (clean.isEmpty()) return@launch
+        repository.updateSettings { settings ->
+            if (settings.savedSearches.any { it.query == clean }) settings else settings.copy(
+                savedSearches = settings.savedSearches + no.vardir.skald.core.model.SavedSearch(
+                    id = System.currentTimeMillis().toString(36),
+                    name = clean,
+                    query = clean,
+                )
+            )
+        }
+        say("Search saved")
+    }
+
+    fun removeSavedSearch(id: String) = viewModelScope.launch {
+        repository.updateSettings { it.copy(savedSearches = it.savedSearches.filterNot { search -> search.id == id }) }
+    }
+
+    fun setSchemaTemplate(schema: no.vardir.skald.core.model.SchemaName, template: String) = viewModelScope.launch {
+        repository.updateSettings { settings ->
+            settings.copy(schemaTemplates = settings.schemaTemplates.toMutableMap().apply {
+                if (template.isBlank()) remove(schema.name) else put(schema.name, template)
+            })
+        }
+        say("${schema.name} template saved")
+    }
 
     fun setDailyFolder(folder: String) =
         viewModelScope.launch { repository.updateSettings { it.copy(dailyFolder = folder.trim().ifEmpty { "Daily" }) } }

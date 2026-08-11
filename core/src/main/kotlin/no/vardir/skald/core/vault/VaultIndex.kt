@@ -17,6 +17,7 @@ import no.vardir.skald.core.model.VaultStats
 import no.vardir.skald.core.text.Frontmatter
 import no.vardir.skald.core.text.Notes
 import no.vardir.skald.core.text.Tasks
+import no.vardir.skald.core.text.Tags
 import no.vardir.skald.core.text.Wikilinks
 
 /** One Markdown file as it was read off disk. */
@@ -46,7 +47,7 @@ object VaultIndex {
         val folder = Notes.topFolder(path)
         val title = Notes.title(parsed.frontmatter, path)
         val schema = Notes.inferSchema(parsed.frontmatter, title, folder)
-        val tags = Frontmatter.tagsOf(parsed.frontmatter)
+        val tags = Tags.merge(Frontmatter.tagsOf(parsed.frontmatter), Tags.extract(parsed.body))
         val linkTargets = Wikilinks.targets(parsed.body)
         val wikilinkCount = Wikilinks.count(parsed.body)
         val headings = Notes.headings(parsed.body, parsed.bodyStartLine)
@@ -121,6 +122,8 @@ object VaultIndex {
                 unresolved = unresolved,
                 headings = rec.headings,
                 excerpt = rec.excerpt,
+                body = rec.body,
+                bodyStartLine = rec.bodyStartLine,
                 wordCount = rec.wordCount,
                 taskCount = rawTasks.size,
                 openTaskCount = rawTasks.count { it.status != TaskStatus.Done },
