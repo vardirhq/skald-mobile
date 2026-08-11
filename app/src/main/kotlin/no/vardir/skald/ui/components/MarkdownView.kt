@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import no.vardir.skald.core.model.AttachmentRef
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.text.Markdown
+import no.vardir.skald.core.text.GitHubRepository
 import no.vardir.skald.ui.theme.Skald
 
 /**
@@ -59,6 +60,8 @@ data class MarkdownContext(
     /** Toggle the thread on this 1-based raw file line. */
     val toggleTask: (Int, Boolean) -> Unit,
     val todayIso: String,
+    /** Repository inherited by a bare `> [!github]` card. */
+    val githubRepo: String? = null,
     /**
      * The live editor's way in: a tap that hits no link reports the rendered
      * text before it, which the editor maps back to an offset in the Markdown
@@ -191,6 +194,11 @@ private fun QuoteBlock(block: Markdown.Block.Quote, ctx: MarkdownContext) {
 
 @Composable
 private fun CalloutBlock(block: Markdown.Block.Callout, ctx: MarkdownContext) {
+    if (block.label.equals("github", ignoreCase = true)) {
+        val explicit = GitHubRepository.normalize(Markdown.plainText(block.content))
+        GitHubRepositoryCard(explicit ?: ctx.githubRepo, ctx)
+        return
+    }
     val colors = Skald.colors
     Column(
         Modifier
@@ -203,6 +211,48 @@ private fun CalloutBlock(block: Markdown.Block.Callout, ctx: MarkdownContext) {
     ) {
         Eyebrow(block.label, Modifier.padding(bottom = 6.dp), colors.accent)
         LinkedText(annotate(block.content, ctx), ctx, Skald.type.row, colors.tx1)
+    }
+}
+
+@Composable
+private fun GitHubRepositoryCard(repo: String?, ctx: MarkdownContext) {
+    val colors = Skald.colors
+    val url = repo?.let(GitHubRepository::url)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 18.dp)
+            .clip(RoundedCornerShape(Skald.metrics.card - 2.dp))
+            .background(colors.bg1)
+            .border(BorderStroke(1.dp, colors.line), RoundedCornerShape(Skald.metrics.card - 2.dp))
+            .then(
+                if (url != null) Modifier.clickable(onClickLabel = "Open $repo on GitHub") {
+                    ctx.openExternal(url)
+                } else Modifier,
+            )
+            .padding(horizontal = 15.dp, vertical = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "GH",
+                style = Skald.type.metaSmall,
+                color = colors.bg0,
+                modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(colors.tx0)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+            Text(
+                repo ?: "Repository not connected",
+                style = Skald.type.row.copy(fontWeight = FontWeight.SemiBold),
+                color = if (repo == null) colors.err else colors.tx0,
+            )
+        }
+        Text(
+            if (url == null) "Add github: owner/repository to this note or name a repository in the callout."
+            else "Open on GitHub · live repository details are available on desktop",
+            style = Skald.type.meta,
+            color = colors.tx3,
+        )
     }
 }
 

@@ -46,6 +46,7 @@ import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.core.text.Dates
 import no.vardir.skald.core.text.Formatting
 import no.vardir.skald.core.text.Frontmatter
+import no.vardir.skald.core.text.GitHubRepository
 import no.vardir.skald.core.text.LiveMarkdown
 import no.vardir.skald.core.text.Markdown
 import no.vardir.skald.core.text.Suggest
@@ -94,6 +95,7 @@ fun EditorScreen(
     val parsed = remember(content) { Frontmatter.parse(content) }
     val body = parsed.body
     val bodyStartLine = parsed.bodyStartLine
+    val githubRepo = GitHubRepository.normalize(parsed.frontmatter["github"])
     fun setBody(next: String) { draft = LiveMarkdown.replaceBody(content, bodyStartLine, next) }
 
     val linkIndex = remember(snapshot.notes) {
@@ -104,6 +106,7 @@ fun EditorScreen(
             notes = snapshot.notes.map { Suggest.NoteRef(it.path, it.title, it.schema, it.updated) },
             tags = (snapshot.notes.flatMap { it.tags } + snapshot.tasks.flatMap { it.tags }).distinct().sorted(),
             todayIso = todayIso,
+            githubRepo = githubRepo,
             index = linkIndex,
         )
     }

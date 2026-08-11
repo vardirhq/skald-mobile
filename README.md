@@ -72,6 +72,9 @@ codes out.
   browsable and restores them to their original path.
 - **Schema templates** — each note kind can start with its own Markdown body, with
   `{{title}}` and `{{date}}` expanded when the note is created.
+- **GitHub card compatibility** — notes linked on desktop with `github: owner/repo`
+  keep that portable property, and bare or explicit `> [!github]` callouts render as
+  native repository cards that open GitHub. Live API details remain a desktop feature.
 - **Encrypted sync** — see below.
 - **Three surfaces** — Midnight, Slate and Daybreak; three densities; three marks.
 
