@@ -12,8 +12,15 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Fixed
 
-- Fixed every sheet drawing its bottom edge underneath the Android navigation bar, which left Save and Cancel sitting behind the system buttons.
+## [0.2.6] - 2026-08-10
 
+### Added
+
+### Changed
+
+### Fixed
+
+- Fixed every sheet drawing its bottom edge underneath the Android navigation bar, which left Save and Cancel sitting behind the system buttons.
 ## [0.2.5] - 2026-08-10
 
 ### Added
@@ -114,5 +121,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.4]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.4
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.5...HEAD
 [0.2.5]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.5
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.6
