@@ -75,6 +75,9 @@ codes out.
 - **GitHub card compatibility** — notes linked on desktop with `github: owner/repo`
   keep that portable property, and bare or explicit `> [!github]` callouts render as
   native repository cards that open GitHub. Live API details remain a desktop feature.
+- **Built-in extensions** — versioned manifests declare cross-client component identities,
+  note properties, and per-platform capabilities. Compose renderers register independently,
+  while unknown components remain ordinary portable callouts. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
 - **Encrypted sync** — see below.
 - **Three surfaces** — Midnight, Slate and Daybreak; three densities; three marks.
 

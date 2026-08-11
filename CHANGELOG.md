@@ -8,6 +8,11 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Added the mobile half of Skald's built-in extension system: versioned manifests,
+  per-platform capabilities, collision-safe component and property registration, and a
+  Compose renderer registry. The GitHub card is now the first registered extension instead
+  of a special case in `MarkdownView`; unknown components still render as portable callouts.
+
 - GitHub repository-card compatibility with desktop Skald. Mobile preserves the
   `github: owner/repo` note property and renders bare or explicit `> [!github]`
   callouts as native, tappable repository cards without requiring GitHub login.
