@@ -8,6 +8,10 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- GitHub repository-card compatibility with desktop Skald. Mobile preserves the
+  `github: owner/repo` note property and renders bare or explicit `> [!github]`
+  callouts as native, tappable repository cards without requiring GitHub login.
+
 ### Changed
 
 ### Fixed
