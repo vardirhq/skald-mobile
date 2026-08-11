@@ -53,7 +53,7 @@ class SearchTagsTemplatesTest {
     fun `inline tags ignore code and merge case insensitively`() {
         val inline = Tags.extract("#Visible `#hidden`\n```kt\n#alsoHidden\n```\n#nested/tag")
         assertEquals(listOf("Visible", "nested/tag"), inline)
-        assertEquals(listOf("Visible", "other"), Tags.merge(inline, listOf("visible", "other")))
+        assertEquals(listOf("Visible", "nested/tag", "other"), Tags.merge(inline, listOf("visible", "other")))
     }
 
     @Test
