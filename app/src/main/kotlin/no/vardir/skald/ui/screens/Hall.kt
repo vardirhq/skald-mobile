@@ -1,7 +1,9 @@
 package no.vardir.skald.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.core.text.Fuzzy
+import no.vardir.skald.core.text.Search
 import no.vardir.skald.ui.components.FilterChip
 import no.vardir.skald.ui.components.Hairline
 import no.vardir.skald.ui.components.Rune
@@ -50,8 +53,16 @@ sealed interface HallHit {
     val title: String
     val trailing: String
 
-    data class Note(override val title: String, val path: String, val schema: no.vardir.skald.core.model.SchemaName, override val trailing: String) : HallHit
+    data class Note(
+        override val title: String,
+        val path: String,
+        val schema: no.vardir.skald.core.model.SchemaName,
+        override val trailing: String,
+        val snippet: String = "",
+    ) : HallHit
     data class Thread(override val title: String, val path: String, val line: Int, override val trailing: String) : HallHit
+    data class Tag(override val title: String, val count: Int) : HallHit { override val trailing: String get() = count.toString() }
+    data class Saved(override val title: String, val id: String, val query: String) : HallHit { override val trailing: String get() = "hold to remove" }
     // Named `action` rather than `run`, because `hit.run()` would collide with
     // the stdlib scope function.
     data class Canto(override val title: String, val action: () -> Unit) : HallHit {
@@ -64,16 +75,20 @@ sealed interface HallHit {
  * rather than a palette — a phone has no ⌘K, and a sheet is the honest shape.
  */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun HallSheet(
     snapshot: VaultSnapshot,
     todayIso: String,
     cantos: List<HallHit.Canto>,
     onOpenNote: (String) -> Unit,
+    initialQuery: String = "",
+    onSaveSearch: (String) -> Unit = {},
+    onRemoveSavedSearch: (String) -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Skald.colors
-    var query by remember { mutableStateOf("") }
+    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
     var filter by remember { mutableStateOf(HallFilter.All) }
     val focus = remember { FocusRequester() }
 
@@ -107,12 +122,13 @@ fun HallSheet(
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
             }
-            Text(
-                "Cancel",
+            if (query.isNotBlank() && snapshot.settings.savedSearches.none { it.query == query.trim() }) Text(
+                "Save",
                 style = Skald.type.row,
                 color = colors.accent,
-                modifier = Modifier.clickable(onClick = onClose),
+                modifier = Modifier.clickable { onSaveSearch(query) }.padding(horizontal = 4.dp, vertical = 8.dp),
             )
+            Text("Cancel", style = Skald.type.row, color = colors.tx2, modifier = Modifier.clickable(onClick = onClose))
         }
         Hairline()
 
@@ -148,14 +164,18 @@ fun HallSheet(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(11.dp))
-                            .clickable {
+                            .combinedClickable(
+                                onLongClick = { if (hit is HallHit.Saved) onRemoveSavedSearch(hit.id) },
+                                onClick = {
                                 when (hit) {
                                     is HallHit.Note -> onOpenNote(hit.path)
                                     is HallHit.Thread -> onOpenNote(hit.path)
                                     is HallHit.Canto -> hit.action()
+                                    is HallHit.Tag -> { query = "tag:${hit.title}"; filter = HallFilter.Notes }
+                                    is HallHit.Saved -> { query = hit.query; filter = HallFilter.Notes }
                                 }
-                                onClose()
-                            }
+                                if (hit is HallHit.Note || hit is HallHit.Thread || hit is HallHit.Canto) onClose()
+                            })
                             .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -164,15 +184,25 @@ fun HallSheet(
                             is HallHit.Note -> Rune(hit.schema)
                             is HallHit.Thread -> Text("☐", style = Skald.type.meta, color = colors.tx3, modifier = Modifier.width(18.dp))
                             is HallHit.Canto -> Text("›", style = Skald.type.meta, color = colors.tx3, modifier = Modifier.width(18.dp))
+                            is HallHit.Tag -> Text("#", style = Skald.type.meta, color = colors.accent, modifier = Modifier.width(18.dp))
+                            is HallHit.Saved -> Text("⌕", style = Skald.type.meta, color = colors.accent, modifier = Modifier.width(18.dp))
                         }
-                        Text(
-                            highlighted(hit.title, indices, colors.accent),
-                            style = Skald.type.row,
-                            color = colors.tx1,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                highlighted(hit.title, indices, colors.accent),
+                                style = Skald.type.row,
+                                color = colors.tx1,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (hit is HallHit.Note && hit.snippet.isNotBlank()) Text(
+                                hit.snippet,
+                                style = Skald.type.meta,
+                                color = colors.tx3,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         Text(hit.trailing, style = Skald.type.meta, color = colors.tx4)
                     }
                 }
@@ -186,6 +216,8 @@ private fun HallHit.key(): String = when (this) {
     is HallHit.Note -> "n:$path"
     is HallHit.Thread -> "t:$path#$line"
     is HallHit.Canto -> "c:$title"
+    is HallHit.Tag -> "tag:$title"
+    is HallHit.Saved -> "saved:$id"
 }
 
 private fun rank(
@@ -204,19 +236,31 @@ private fun rank(
             .map { it.first to it.third }
             .take(if (query.isEmpty()) 8 else 30)
 
-    val notes = snapshot.notes.map {
-        HallHit.Note(it.title, it.path, it.schema, it.folder.ifEmpty { snapshot.vaultName })
+    val notes = if (query.isBlank()) snapshot.notes.sortedByDescending { it.updated }.take(8).map {
+        HallHit.Note(it.title, it.path, it.schema, it.folder.ifEmpty { snapshot.vaultName }, it.excerpt)
+    } else Search.find(snapshot.notes, query, limit = 40).map {
+        HallHit.Note(it.title, it.path, it.schema, "${it.path} · line ${it.line}", it.snippet)
     }
     val threads = snapshot.tasks.filter { it.status != TaskStatus.Done }.map {
         HallHit.Thread(it.content, it.notePath, it.line, it.due?.let { due -> if (due < todayIso) "overdue" else due.drop(5) } ?: "—")
     }
 
     return buildList {
+        if (query.isBlank() && filter == HallFilter.All && snapshot.settings.savedSearches.isNotEmpty()) {
+            add("Saved searches" to snapshot.settings.savedSearches.map { HallHit.Saved(it.name, it.id, it.query) to emptyList() })
+        }
+        if (query.isBlank() && filter == HallFilter.All) {
+            val tags = snapshot.notes.flatMap { it.tags }.groupingBy { it.lowercase() }.eachCount()
+                .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).take(12)
+                .map { HallHit.Tag(it.key, it.value) to emptyList<Int>() }
+            if (tags.isNotEmpty()) add("Tags" to tags)
+        }
         if (filter == HallFilter.All || filter == HallFilter.Cantos) {
             matches(cantos).takeIf { it.isNotEmpty() }?.let { add("Cantos" to it) }
         }
         if (filter == HallFilter.All || filter == HallFilter.Notes) {
-            matches(notes).takeIf { it.isNotEmpty() }?.let { add("Notes" to it) }
+            val noteHits = notes.map { it to emptyList<Int>() }
+            noteHits.takeIf { it.isNotEmpty() }?.let { add("Notes" to it) }
         }
         if (filter == HallFilter.All || filter == HallFilter.Threads) {
             matches(threads).takeIf { it.isNotEmpty() }?.let { add("Threads" to it) }

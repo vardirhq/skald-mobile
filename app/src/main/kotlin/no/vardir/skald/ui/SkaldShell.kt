@@ -44,10 +44,12 @@ import no.vardir.skald.ui.components.SkaldLogo
 import no.vardir.skald.ui.screens.ConstellationScreen
 import no.vardir.skald.ui.screens.EditorScreen
 import no.vardir.skald.ui.screens.FolderActionsSheet
+import no.vardir.skald.ui.screens.ConfirmSheet
 import no.vardir.skald.ui.screens.HallHit
 import no.vardir.skald.ui.screens.HallSheet
 import no.vardir.skald.ui.screens.NewFolderSheet
 import no.vardir.skald.ui.screens.NewThreadSheet
+import no.vardir.skald.ui.screens.MoveSheet
 import no.vardir.skald.ui.screens.NoteActionsSheet
 import no.vardir.skald.ui.screens.NotesScreen
 import no.vardir.skald.ui.screens.SettingsScreen
@@ -56,6 +58,7 @@ import no.vardir.skald.ui.screens.ThreadSheet
 import no.vardir.skald.ui.screens.ThreadTarget
 import no.vardir.skald.ui.screens.ThreadsScreen
 import no.vardir.skald.ui.screens.TodayScreen
+import no.vardir.skald.ui.screens.TrashScreen
 import no.vardir.skald.ui.theme.Skald
 import no.vardir.skald.ui.theme.SkaldTheme
 
@@ -92,6 +95,8 @@ fun SkaldShell(
         var newFolderUnder by remember { mutableStateOf<String?>(null) }
         var threadMenu by remember { mutableStateOf<String?>(null) }
         var newThread by remember { mutableStateOf(false) }
+        var bulkMove by remember { mutableStateOf(false) }
+        var bulkDelete by remember { mutableStateOf(false) }
         val imeVisible = WindowInsets.isImeVisible
 
         val knownTags = remember(snapshot.notes, snapshot.tasks) {
@@ -109,12 +114,13 @@ fun SkaldShell(
                     title = topTitle(ui, snapshot),
                     subtitle = topSubtitle(ui, snapshot, syncStatus.pending),
                     inNote = ui.openNote != null,
-                    inSettings = ui.settingsOpen,
+                    inSettings = ui.settingsOpen || ui.trashOpen,
                     logoVariant = snapshot.settings.logoVariant,
                     editorMode = ui.editorMode,
                     onBack = {
                         when {
                             ui.syncPaneOpen -> viewModel.setSyncPaneOpen(false)
+                            ui.trashOpen -> viewModel.setTrashOpen(false)
                             ui.settingsOpen -> viewModel.setSettingsOpen(false)
                             else -> viewModel.closeNote()
                         }
@@ -144,6 +150,11 @@ fun SkaldShell(
                             onDisconnect = viewModel::disconnectSync,
                         )
 
+                        ui.trashOpen -> TrashScreen(
+                            entries = ui.deletedNotes,
+                            onRestore = { viewModel.restoreDeleted(it.path, it.versionId) },
+                        )
+
                         ui.settingsOpen -> SettingsScreen(
                             snapshot = snapshot,
                             syncStatus = syncStatus,
@@ -151,6 +162,8 @@ fun SkaldShell(
                             onDensity = viewModel::setDensity,
                             onLogoVariant = viewModel::setLogoVariant,
                             onEditorFontSize = viewModel::setEditorFontSize,
+                            onSchemaTemplate = viewModel::setSchemaTemplate,
+                            onOpenTrash = { viewModel.setTrashOpen(true) },
                             onOpenSync = { viewModel.setSyncPaneOpen(true) },
                         )
 
@@ -184,6 +197,11 @@ fun SkaldShell(
                                 onNoteMenu = { noteMenu = it.path },
                                 onFolderMenu = { folderMenu = it },
                                 onNewFolder = { newFolderUnder = "" },
+                                selected = ui.selectedNotes,
+                                onToggleSelection = viewModel::toggleNoteSelection,
+                                onMoveSelection = { bulkMove = true },
+                                onDeleteSelection = { bulkDelete = true },
+                                onClearSelection = viewModel::clearNoteSelection,
                             )
 
                             Tab.Threads -> ThreadsScreen(
@@ -202,7 +220,7 @@ fun SkaldShell(
                     // point. On the threads list it writes a thread instead of a
                     // note — the same gesture for the same intent, aimed at
                     // whatever the surface is actually about.
-                    if (ui.openNote == null && !ui.settingsOpen && !ui.syncPaneOpen &&
+                    if (ui.openNote == null && !ui.settingsOpen && !ui.trashOpen && !ui.syncPaneOpen && ui.selectedNotes.isEmpty() &&
                         (ui.tab == Tab.Notes || ui.tab == Tab.Today || ui.tab == Tab.Threads)
                     ) {
                         val writingThread = ui.tab == Tab.Threads
@@ -228,7 +246,7 @@ fun SkaldShell(
                 // there, and a tab bar underneath it would only be in the way.
                 when {
                     imeVisible -> Unit
-                    ui.settingsOpen || ui.syncPaneOpen -> Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+                    ui.settingsOpen || ui.trashOpen || ui.syncPaneOpen -> Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
                     else -> TabBar(
                         current = ui.tab,
                         inNote = ui.openNote != null,
@@ -248,6 +266,9 @@ fun SkaldShell(
                     todayIso = viewModel.today,
                     cantos = cantos(viewModel),
                     onOpenNote = viewModel::openNote,
+                    initialQuery = ui.searchQuery,
+                    onSaveSearch = viewModel::saveSearch,
+                    onRemoveSavedSearch = viewModel::removeSavedSearch,
                     onClose = { viewModel.setSearchOpen(false) },
                     modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
                 )
@@ -347,6 +368,33 @@ fun SkaldShell(
                         viewModel.createThread(path, content, due, priority, tags)
                     },
                     onDismiss = { newThread = false },
+                )
+            }
+
+            if (bulkMove && ui.selectedNotes.isNotEmpty()) {
+                MoveSheet(
+                    title = "${ui.selectedNotes.size} selected notes",
+                    current = "__selection__",
+                    snapshot = snapshot,
+                    onConfirm = {
+                        bulkMove = false
+                        viewModel.moveSelectedNotes(it)
+                    },
+                    onDismiss = { bulkMove = false },
+                )
+            }
+
+            if (bulkDelete && ui.selectedNotes.isNotEmpty()) {
+                ConfirmSheet(
+                    title = "Delete ${ui.selectedNotes.size} notes?",
+                    subtitle = "Recently deleted",
+                    body = "The Markdown files will be removed, but every note can be restored from its local deletion history.",
+                    confirm = "Delete",
+                    onConfirm = {
+                        bulkDelete = false
+                        viewModel.deleteSelectedNotes()
+                    },
+                    onDismiss = { bulkDelete = false },
                 )
             }
 
@@ -541,6 +589,7 @@ private fun Tab.schema(): no.vardir.skald.core.model.SchemaName = when (this) {
 
 private fun topTitle(ui: UiState, snapshot: no.vardir.skald.core.model.VaultSnapshot): String = when {
     ui.syncPaneOpen -> "Sync"
+    ui.trashOpen -> "Recently deleted"
     ui.settingsOpen -> "Settings"
     ui.openNote != null -> ui.openNote.meta.title
     else -> when (ui.tab) {
@@ -557,6 +606,7 @@ private fun topSubtitle(
     pending: Int,
 ): String = when {
     ui.syncPaneOpen -> if (pending > 0) "$pending waiting to publish" else ""
+    ui.trashOpen -> "${ui.deletedNotes.size} recoverable"
     ui.settingsOpen -> snapshot.vaultName
     ui.openNote != null -> ui.openNote.meta.path
     else -> when (ui.tab) {
@@ -573,6 +623,7 @@ private fun cantos(viewModel: SkaldViewModel): List<HallHit.Canto> = listOf(
     HallHit.Canto("Open threads") { viewModel.selectTab(Tab.Threads) },
     HallHit.Canto("Sync now") { viewModel.syncNow() },
     HallHit.Canto("Open settings") { viewModel.setSettingsOpen(true) },
+    HallHit.Canto("Open recently deleted") { viewModel.setTrashOpen(true) },
     HallHit.Canto("Open sync") {
         viewModel.setSettingsOpen(true)
         viewModel.setSyncPaneOpen(true)

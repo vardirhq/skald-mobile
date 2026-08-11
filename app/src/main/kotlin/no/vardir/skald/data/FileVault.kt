@@ -2,8 +2,10 @@ package no.vardir.skald.data
 
 import no.vardir.skald.core.gesh.Crypto
 import no.vardir.skald.core.model.AttachmentRef
+import no.vardir.skald.core.model.DeletedNoteEntry
 import no.vardir.skald.core.model.NoteHistoryEntry
 import no.vardir.skald.core.model.NoteHistoryReason
+import no.vardir.skald.core.model.SchemaName
 import no.vardir.skald.core.model.VaultSettings
 import no.vardir.skald.core.sync.SyncAsset
 import no.vardir.skald.core.sync.SyncNote
@@ -13,6 +15,7 @@ import no.vardir.skald.core.text.Attachments
 import no.vardir.skald.core.text.Frontmatter
 import no.vardir.skald.core.text.Notes
 import no.vardir.skald.core.text.Tasks
+import no.vardir.skald.core.text.Templates
 import no.vardir.skald.core.text.Wikilinks
 import no.vardir.skald.core.vault.RawNote
 import kotlinx.serialization.encodeToString
@@ -155,10 +158,7 @@ class FileVault(val root: File) : SyncVault {
 
     /** Move a note into another folder, keeping its file name. `""` is the vault root. */
     fun move(path: String, folder: String): String? {
-        val name = path.substringAfterLast('/')
-        val target = if (folder.isEmpty()) name else "$folder/$name"
-        if (target == path) return path
-        return rename(path, target)
+        return moveMany(listOf(path), folder)?.get(path)
     }
 
     /** A copy beside the original, titled so the two can be told apart. */
@@ -189,12 +189,98 @@ class FileVault(val root: File) : SyncVault {
     }
 
     /** Create a note, making its title unique within the folder rather than clobbering. */
-    fun createNote(folder: String, title: String, schema: String? = null): String {
+    fun createNote(folder: String, title: String, schema: String? = null, settings: VaultSettings = VaultSettings(), todayIso: String): String {
         val candidate = freePath(folder, title)
-        val frontmatter = linkedMapOf<String, Any?>("title" to Notes.titleFromPath(candidate))
-        if (schema != null) frontmatter["schema"] = schema
-        write(candidate, Frontmatter.serialize(frontmatter, "\n"))
+        val noteTitle = Notes.titleFromPath(candidate)
+        val resolved = SchemaName.fromOrNull(schema)
+            ?: Notes.inferSchema(emptyMap(), noteTitle, folder.substringBefore('/'))
+        val frontmatter = linkedMapOf<String, Any?>(
+            "title" to noteTitle,
+            "schema" to resolved.name,
+            "created" to todayIso,
+        )
+        val template = Templates.render(settings.schemaTemplates[resolved.name].orEmpty(), noteTitle, todayIso)
+        val body = if (template.isBlank()) "\n" else "\n${template.trimEnd()}\n"
+        write(candidate, Frontmatter.serialize(frontmatter, body))
         return candidate
+    }
+
+    /**
+     * Move a selection as one operation. Every destination is validated before
+     * the first file changes, files are staged to avoid path-order collisions,
+     * and links are resolved against the pre-move index before being rewritten.
+     */
+    fun moveMany(paths: Collection<String>, folder: String): Map<String, String>? {
+        val chosen = paths.distinct().sorted()
+        if (chosen.isEmpty()) return emptyMap()
+        val before = notes()
+        val byPath = before.associateBy { it.path }
+        if (chosen.any { it !in byPath }) return null
+        val mapping = chosen.associateWith { path ->
+            val name = path.substringAfterLast('/')
+            if (folder.isEmpty()) name else "$folder/$name"
+        }
+        if (mapping.values.toSet().size != mapping.size) return null
+        if (mapping.any { (from, to) -> to != from && (to in byPath || fileFor(to)?.exists() == true) && to !in mapping.keys }) return null
+
+        val linkables = before.map { raw ->
+            val parsed = Frontmatter.parse(raw.raw)
+            Wikilinks.Linkable(raw.path, Notes.title(parsed.frontmatter, raw.path))
+        }
+        val oldIndex = Wikilinks.buildIndex(linkables)
+        val finalIndex = Wikilinks.buildIndex(linkables.map { it.copy(path = mapping[it.path] ?: it.path) })
+        val staged = mutableMapOf<String, File>()
+        try {
+            for ((from, to) in mapping.filter { it.key != it.value }) {
+                val source = fileFor(from)?.takeIf { it.isFile } ?: error("Missing $from")
+                captureVersion(from, NoteHistoryReason.Rename)
+                val temporary = File(source.parentFile, "${source.name}.skald-move-${System.nanoTime()}")
+                if (!source.renameTo(temporary)) error("Could not stage $from")
+                staged[from] = temporary
+            }
+            for ((from, temporary) in staged) {
+                val to = mapping.getValue(from)
+                val target = fileFor(to) ?: error("Unsafe destination $to")
+                target.parentFile?.mkdirs()
+                if (!temporary.renameTo(target)) error("Could not publish $to")
+                migrateHistory(from, to)
+            }
+        } catch (_: Throwable) {
+            for ((from, temporary) in staged) {
+                val published = fileFor(mapping.getValue(from))
+                val held = when {
+                    temporary.exists() -> temporary
+                    published?.exists() == true -> published
+                    else -> null
+                }
+                held?.renameTo(fileFor(from) ?: continue)
+                migrateHistory(mapping.getValue(from), from)
+            }
+            return null
+        }
+
+        for (note in notes()) {
+            val rewritten = Wikilinks.rewrite(
+                note.raw,
+                matches = { oldIndex.resolve(it) in mapping.keys },
+                rewrite = { written ->
+                    val oldPath = oldIndex.resolve(written)
+                    if (oldPath == null) written else Wikilinks.shortestTarget(mapping[oldPath] ?: oldPath, finalIndex)
+                },
+            )
+            if (rewritten != note.raw) write(note.path, rewritten, NoteHistoryReason.External)
+        }
+        return mapping
+    }
+
+    fun deleteMany(paths: Collection<String>): Int {
+        var deleted = 0
+        for (path in paths.distinct()) {
+            val file = fileFor(path)?.takeIf { it.isFile } ?: continue
+            captureVersion(path, NoteHistoryReason.Delete)
+            if (file.delete()) deleted++
+        }
+        return deleted
     }
 
     // ---------- folders ----------
@@ -249,7 +335,9 @@ class FileVault(val root: File) : SyncVault {
     fun ensureDaily(settings: VaultSettings, todayIso: String): String {
         val path = "${settings.dailyFolder}/$todayIso.md"
         if (!exists(path)) {
-            write(path, Frontmatter.serialize(linkedMapOf("schema" to "Daily", "created" to todayIso), "\n"))
+            val template = Templates.render(settings.schemaTemplates[SchemaName.Daily.name].orEmpty(), todayIso, todayIso)
+            val body = if (template.isBlank()) "\n" else "\n${template.trimEnd()}\n"
+            write(path, Frontmatter.serialize(linkedMapOf("schema" to "Daily", "created" to todayIso), body))
         }
         return path
     }
@@ -370,6 +458,47 @@ class FileVault(val root: File) : SyncVault {
         val content = readVersion(path, id) ?: return false
         write(path, content, NoteHistoryReason.Restore)
         return true
+    }
+
+    /** Delete snapshots whose note no longer exists, newest deletion first. */
+    fun deletedNotes(): List<DeletedNoteEntry> = (historyDir.listFiles() ?: emptyArray())
+        .asSequence()
+        .filter { it.isDirectory }
+        .mapNotNull { dir ->
+            val path = File(dir, ".path").takeIf { it.isFile }?.readText()?.trim().orEmpty()
+            if (path.isEmpty() || exists(path)) return@mapNotNull null
+            val snapshot = dir.listFiles()?.filter { it.name.matches(Regex("\\d+-delete\\.md")) }
+                ?.maxByOrNull { it.name.substringBefore('-').toLongOrNull() ?: 0L }
+                ?: return@mapNotNull null
+            val content = runCatching { snapshot.readText() }.getOrNull() ?: return@mapNotNull null
+            val parsed = Frontmatter.parse(content)
+            val title = Notes.title(parsed.frontmatter, path)
+            DeletedNoteEntry(
+                path = path,
+                title = title,
+                schema = Notes.inferSchema(parsed.frontmatter, title, Notes.topFolder(path)),
+                deletedAt = snapshot.name.substringBefore('-').toLongOrNull() ?: snapshot.lastModified(),
+                size = snapshot.length(),
+                versionId = snapshot.name,
+            )
+        }
+        .sortedByDescending { it.deletedAt }
+        .toList()
+
+    fun restoreDeleted(path: String, versionId: String): Boolean {
+        if (exists(path)) return false
+        val content = readVersion(path, versionId) ?: return false
+        write(path, content, NoteHistoryReason.Restore)
+        return true
+    }
+
+    private fun migrateHistory(from: String, to: String) {
+        val old = File(historyDir, hashOf(from))
+        if (!old.isDirectory) return
+        val target = File(historyDir, hashOf(to))
+        if (!target.exists()) old.renameTo(target)
+        val held = if (target.isDirectory) target else old
+        File(held, ".path").writeText(to)
     }
 
     private fun prune(dir: File) {

@@ -8,9 +8,20 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Full-text Hall search across complete Markdown bodies with ranked snippets, source lines, quoted terms, and `schema:`, `tag:`, and `folder:` filters.
+- Saved Hall searches and a tag browser built from frontmatter, inline body tags, and thread tags.
+- Recently Deleted, backed by the local snapshots Skald already keeps, with one-tap restore to the original path.
+- Editable templates for every schema with `{{title}}` and `{{date}}` placeholders, applied to new notes and daily pages.
+- Long-press explorer selection with validated bulk Move and Delete actions, plus Copy links and Android sharing.
+
 ### Changed
 
+- Note moves now validate the whole selection before touching disk, stage files as one operation, carry history forward, and rewrite links against the pre-move vault index.
+- Inline tags outside code spans and fenced code blocks now join frontmatter tags in the vault index and editor vocabulary.
+
 ### Fixed
+
+- Moving notes with ambiguous bare wikilinks now preserves their resolved destination instead of allowing a same-named note to steal the link.
 
 ## [0.2.6] - 2026-08-10
 

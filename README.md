@@ -53,21 +53,25 @@ codes out.
   it names, which means it grows its folder exactly when a bare name stops being enough.
   The editor shows what links back; renaming a note rewrites every link that pointed at
   it, in whichever form it was written.
-- **Folders, and a note you can rename** — the explorer is a real tree: nested,
+- **Folders, and notes you can manage together** — the explorer is a real tree: nested,
   collapsible, empty folders included. A long press on a note offers what a right-click
-  would — open, properties, rename the file, move it, duplicate it, copy a link to it,
-  pin it, delete it — and a long press on a folder renames it, taking its notes and their
-  links along. The new-note sheet offers every folder in the vault rather than the first
-  few at the top.
+  would on a phone: it enters selection mode for transactional bulk move or delete; the
+  trailing menu still offers properties, rename, move, duplicate, copy link, pin and
+  delete for one note. Folder rename takes its notes and links along. The new-note sheet
+  offers every folder in the vault rather than the first few at the top.
 - **The Logbook** — today's page in the saga: the date set large, honest counts, a week
   of activity, the threads due soonest, what you touched, a pinned note.
 - **The Constellation** — the graph as a star chart. Positions are laid out once,
   persisted to `.skald/layout.json`, and clustered by folder. Pinch to zoom, drag to pan.
   A map you return to, not a simulation.
-- **Skald's Hall** — full-screen fuzzy search over notes, threads and *cantos* (the
-  commands), with the same weighted matcher the desktop uses.
+- **Skald's Hall** — full-screen ranked search over complete note bodies, titles, paths,
+  threads and *cantos* (the commands), with snippets and `schema:`, `tag:` and `folder:`
+  filters. Tags are browsable, and useful queries can be saved for one-tap return.
 - **Local note history** — a snapshot before every edit, external change, rename, delete
-  and restore, kept in `.skald/history/`. Nothing sync overwrites is ever actually gone.
+  and restore, kept in `.skald/history/`. Recently Deleted makes removal snapshots
+  browsable and restores them to their original path.
+- **Schema templates** — each note kind can start with its own Markdown body, with
+  `{{title}}` and `{{date}}` expanded when the note is created.
 - **Encrypted sync** — see below.
 - **Three surfaces** — Midnight, Slate and Daybreak; three densities; three marks.
 
@@ -175,10 +179,9 @@ end-to-end loop — two vaults pairing, propagating, deleting, converging, prese
 losing edit, and surviving a restart — against an in-memory relay that encodes the protocol
 as documented.
 
-`app` is written but **has never been compiled**: it was developed in a sandbox whose
-egress policy blocks `dl.google.com`, and AndroidX is published nowhere else, so neither
-the Android SDK nor the Compose artifacts could be fetched. Everything risky was pushed
-into `core` for that reason. Expect the first `assembleDebug` to want small fixes.
+`app` is built by GitHub Actions as both a separate-install debug APK
+(`no.vardir.skald.dev`) and a signed release. Release preparation also exercises R8 so
+minifier-only failures are caught before a tag is published.
 
 Not built yet, and deliberately: attachment import from the phone's picker (the vault
 reads and syncs attachments, but nothing adds one from here), the slash menu, and drag to

@@ -92,6 +92,10 @@ data class NoteMeta(
     val unresolved: List<String> = emptyList(),
     val headings: List<HeadingItem> = emptyList(),
     val excerpt: String = "",
+    /** Parsed Markdown body, kept in the disposable index for local full-text search. */
+    val body: String = "",
+    /** 1-based raw-file line where [body] begins, after frontmatter. */
+    val bodyStartLine: Int = 1,
     val wordCount: Int = 0,
     val taskCount: Int = 0,
     val openTaskCount: Int = 0,
@@ -162,6 +166,13 @@ enum class Density { Compact, Regular, Cozy }
 enum class LogoVariant { Sigil, Monogram, Bracket }
 
 @Serializable
+data class SavedSearch(
+    val id: String,
+    val name: String,
+    val query: String,
+)
+
+@Serializable
 data class VaultSettings(
     val theme: ThemeName = ThemeName.Midnight,
     val density: Density = Density.Regular,
@@ -173,6 +184,10 @@ data class VaultSettings(
     val attachmentsFolder: String = "Attachments",
     val editorFontSize: Int = 16,
     val autosaveMs: Int = 800,
+    /** Named Hall queries. Shape intentionally matches desktop settings. */
+    val savedSearches: List<SavedSearch> = emptyList(),
+    /** Markdown bodies inserted when a note of this schema is created. */
+    val schemaTemplates: Map<String, String> = emptyMap(),
 )
 
 /** One fully indexed view of the vault, which every screen reads from. */
@@ -226,4 +241,13 @@ data class NoteHistoryEntry(
     val createdAt: Long,
     val size: Long,
     val reason: NoteHistoryReason,
+)
+
+data class DeletedNoteEntry(
+    val path: String,
+    val title: String,
+    val schema: SchemaName,
+    val deletedAt: Long,
+    val size: Long,
+    val versionId: String,
 )

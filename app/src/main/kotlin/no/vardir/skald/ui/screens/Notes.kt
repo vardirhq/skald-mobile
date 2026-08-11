@@ -1,5 +1,6 @@
 package no.vardir.skald.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,12 +19,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import no.vardir.skald.core.model.FolderNode
 import no.vardir.skald.core.model.NoteMeta
 import no.vardir.skald.core.model.VaultSnapshot
+import no.vardir.skald.core.text.Wikilinks
 import no.vardir.skald.ui.components.EmptyState
 import no.vardir.skald.ui.components.Hairline
 import no.vardir.skald.ui.components.Rune
@@ -50,13 +55,36 @@ fun NotesScreen(
     onNoteMenu: (NoteMeta) -> Unit,
     onFolderMenu: (String) -> Unit,
     onNewFolder: () -> Unit,
+    selected: Set<String> = emptySet(),
+    onToggleSelection: (String) -> Unit = {},
+    onMoveSelection: () -> Unit = {},
+    onDeleteSelection: () -> Unit = {},
+    onClearSelection: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = Skald.colors
     val rows = remember(snapshot.tree, collapsed) { flatten(snapshot.tree, collapsed) }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val selectedLinks = remember(snapshot.notes, selected) {
+        val index = Wikilinks.buildIndex(snapshot.notes.map { Wikilinks.Linkable(it.path, it.title) })
+        selected.sorted().joinToString("\n") { "[[${Wikilinks.shortestTarget(it, index)}]]" }
+    }
 
     Column(modifier.fillMaxWidth()) {
-        Row(
+        if (selected.isNotEmpty()) SelectionBar(
+            count = selected.size,
+            onMove = onMoveSelection,
+            onDelete = onDeleteSelection,
+            onCopy = { clipboard.setText(AnnotatedString(selectedLinks)) },
+            onShare = {
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, selectedLinks)
+                }, "Share note links"))
+            },
+            onClear = onClearSelection,
+        ) else Row(
             Modifier.fillMaxWidth().padding(start = 22.dp, end = 10.dp, top = 12.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -100,8 +128,11 @@ fun NotesScreen(
                             NoteRow(
                                 note = note,
                                 depth = row.depth,
-                                onOpen = { onOpenNote(note.path) },
-                                onMenu = { onNoteMenu(note) },
+                                selected = note.path in selected,
+                                selectionActive = selected.isNotEmpty(),
+                                onOpen = { if (selected.isEmpty()) onOpenNote(note.path) else onToggleSelection(note.path) },
+                                onMenu = { if (selected.isEmpty()) onToggleSelection(note.path) else onToggleSelection(note.path) },
+                                onActions = { onNoteMenu(note) },
                             )
                         }
                     }
@@ -152,13 +183,22 @@ private fun FolderHeader(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NoteRow(note: NoteMeta, depth: Int, onOpen: () -> Unit, onMenu: () -> Unit) {
+private fun NoteRow(
+    note: NoteMeta,
+    depth: Int,
+    selected: Boolean,
+    selectionActive: Boolean,
+    onOpen: () -> Unit,
+    onMenu: () -> Unit,
+    onActions: () -> Unit,
+) {
     val colors = Skald.colors
     Column {
         Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
+                .background(if (selected) colors.accentGhost else androidx.compose.ui.graphics.Color.Transparent)
                 .combinedClickable(onLongClick = onMenu, onClickLabel = "Open note", onClick = onOpen)
                 .padding(start = (10 + depth * 15).dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -176,13 +216,52 @@ private fun NoteRow(note: NoteMeta, depth: Int, onOpen: () -> Unit, onMenu: () -
                 val meta = noteMeta(note)
                 if (meta.isNotEmpty()) Text(meta, style = Skald.type.meta, color = colors.tx3, maxLines = 1)
             }
-            Text("⋯", style = Skald.type.row, color = colors.tx4, modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClickLabel = "What can be done with this note", onClick = onMenu)
-                .padding(horizontal = 10.dp, vertical = 6.dp))
+            if (selectionActive) {
+                Text(if (selected) "✓" else "○", style = Skald.type.row, color = if (selected) colors.accent else colors.tx4)
+            } else {
+                Text("⋯", style = Skald.type.row, color = colors.tx4, modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClickLabel = "What can be done with this note", onClick = onActions)
+                    .padding(horizontal = 10.dp, vertical = 6.dp))
+            }
         }
         Box(Modifier.padding(start = (10 + depth * 15).dp)) { Hairline() }
     }
+}
+
+@Composable
+private fun SelectionBar(
+    count: Int,
+    onMove: () -> Unit,
+    onDelete: () -> Unit,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val colors = Skald.colors
+    Column(Modifier.fillMaxWidth().background(colors.bg1).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("$count selected", style = Skald.type.row, color = colors.tx0, modifier = Modifier.weight(1f))
+            Text(
+                "Done",
+                style = Skald.type.metaSmall,
+                color = colors.accent,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClear).padding(10.dp),
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for ((label, action) in listOf("Move" to onMove, "Copy links" to onCopy, "Share" to onShare, "Delete" to onDelete)) {
+                Box(
+                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(colors.bg2)
+                        .clickable(onClick = action).padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label, style = Skald.type.metaSmall, color = if (label == "Delete") colors.err else colors.accent)
+                }
+            }
+        }
+    }
+    Hairline()
 }
 
 private fun noteMeta(note: NoteMeta): String = buildList {
