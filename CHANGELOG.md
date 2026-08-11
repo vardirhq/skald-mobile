@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-08-11
+
+### Added
+
 - Full-text Hall search across complete Markdown bodies with ranked snippets, source lines, quoted terms, and `schema:`, `tag:`, and `folder:` filters.
 - Saved Hall searches and a tag browser built from frontmatter, inline body tags, and thread tags.
 - Recently Deleted, backed by the local snapshots Skald already keeps, with one-tap restore to the original path.
@@ -22,7 +30,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 ### Fixed
 
 - Moving notes with ambiguous bare wikilinks now preserves their resolved destination instead of allowing a same-named note to steal the link.
-
 ## [0.2.6] - 2026-08-10
 
 ### Added
@@ -134,5 +141,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.5]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.5
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.2.6...HEAD
 [0.2.6]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.6
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.0
