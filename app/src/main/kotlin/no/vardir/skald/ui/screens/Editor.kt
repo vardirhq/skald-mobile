@@ -106,7 +106,6 @@ fun EditorScreen(
             notes = snapshot.notes.map { Suggest.NoteRef(it.path, it.title, it.schema, it.updated) },
             tags = (snapshot.notes.flatMap { it.tags } + snapshot.tasks.flatMap { it.tags }).distinct().sorted(),
             todayIso = todayIso,
-            githubRepo = githubRepo,
             index = linkIndex,
         )
     }
@@ -125,6 +124,7 @@ fun EditorScreen(
             openAttachment = onOpenAttachment,
             toggleTask = ::toggleTask,
             todayIso = todayIso,
+            githubRepo = githubRepo,
         )
     }
 
