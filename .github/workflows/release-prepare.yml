@@ -24,6 +24,9 @@ jobs:
   prepare:
     name: Bump version and open release PR
     runs-on: ubuntu-latest
+    env:
+      SKALD_GITHUB_CLIENT_ID: ${{ vars.SKALD_GITHUB_CLIENT_ID }}
+      SKALD_GITHUB_APP_SLUG: ${{ vars.SKALD_GITHUB_APP_SLUG }}
     permissions:
       contents: write
       pull-requests: write

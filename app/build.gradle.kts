@@ -13,6 +13,10 @@ val versionProperties = Properties().apply {
 val releaseKeystore = providers.environmentVariable("SKALD_ANDROID_KEYSTORE_PATH")
 val releaseStorePassword = providers.environmentVariable("SKALD_ANDROID_STORE_PASSWORD")
 val releaseKeyPassword = providers.environmentVariable("SKALD_ANDROID_KEY_PASSWORD")
+val githubClientId = providers.environmentVariable("SKALD_GITHUB_CLIENT_ID").orElse("")
+val githubAppSlug = providers.environmentVariable("SKALD_GITHUB_APP_SLUG").orElse("")
+
+fun quotedBuildConfig(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
     namespace = "no.vardir.skald"
@@ -24,6 +28,8 @@ android {
         targetSdk = 35
         versionCode = versionProperties.getProperty("VERSION_CODE").toInt()
         versionName = versionProperties.getProperty("VERSION_NAME")
+        buildConfigField("String", "GITHUB_CLIENT_ID", quotedBuildConfig(githubClientId.get()))
+        buildConfigField("String", "GITHUB_APP_SLUG", quotedBuildConfig(githubAppSlug.get()))
     }
 
     signingConfigs {
@@ -50,6 +56,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {

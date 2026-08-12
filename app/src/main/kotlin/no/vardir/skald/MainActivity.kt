@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import no.vardir.skald.core.model.AttachmentRef
 import no.vardir.skald.data.AppPrefs
+import no.vardir.skald.data.GitHubService
 import no.vardir.skald.data.VaultRepository
 import no.vardir.skald.ui.SkaldShell
 import no.vardir.skald.ui.SkaldViewModel
@@ -57,7 +58,7 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             } else {
-                val model: SkaldViewModel = viewModel(factory = shellFactory(app.repository))
+                val model: SkaldViewModel = viewModel(factory = shellFactory(app.repository, app.github))
 
                 // A pairing QR scanned by the system camera arrives here as a
                 // gesh:// link, which is the shortest path from "point the phone
@@ -100,9 +101,9 @@ class MainActivity : ComponentActivity() {
     private fun pairingUriOf(intent: Intent?): String? =
         intent?.data?.toString()?.takeIf { it.startsWith("gesh://", ignoreCase = true) }
 
-    private fun shellFactory(repository: VaultRepository) = object : ViewModelProvider.Factory {
+    private fun shellFactory(repository: VaultRepository, github: GitHubService) = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = SkaldViewModel(repository) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = SkaldViewModel(repository, github) as T
     }
 
     private fun setupFactory(prefs: AppPrefs, repository: () -> VaultRepository) =

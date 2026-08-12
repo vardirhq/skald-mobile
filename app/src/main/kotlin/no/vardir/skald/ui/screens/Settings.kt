@@ -29,6 +29,7 @@ import no.vardir.skald.core.model.LogoVariant
 import no.vardir.skald.core.model.SchemaName
 import no.vardir.skald.core.model.ThemeName
 import no.vardir.skald.core.model.VaultSnapshot
+import no.vardir.skald.core.extensions.github.GitHubAuthStatus
 import no.vardir.skald.core.sync.SyncPhase
 import no.vardir.skald.core.sync.SyncStatus
 import no.vardir.skald.ui.components.Hairline
@@ -55,6 +56,11 @@ fun SettingsScreen(
     onSchemaTemplate: (SchemaName, String) -> Unit,
     onOpenTrash: () -> Unit,
     onOpenSync: () -> Unit,
+    githubStatus: GitHubAuthStatus,
+    onConnectGitHub: () -> Unit,
+    onCancelGitHub: () -> Unit,
+    onDisconnectGitHub: () -> Unit,
+    onOpenExternal: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = Skald.colors
@@ -150,6 +156,18 @@ fun SettingsScreen(
         }
 
         item {
+            Column(Modifier.padding(top = 26.dp)) {
+                GitHubSettings(
+                    status = githubStatus,
+                    onConnect = onConnectGitHub,
+                    onCancel = onCancelGitHub,
+                    onDisconnect = onDisconnectGitHub,
+                    onOpenExternal = onOpenExternal,
+                )
+            }
+        }
+
+        item {
             Column(Modifier.padding(top = 26.dp, bottom = 40.dp)) {
                 SectionHeader("Sync")
                 Row(
@@ -184,6 +202,90 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun GitHubSettings(
+    status: GitHubAuthStatus,
+    onConnect: () -> Unit,
+    onCancel: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenExternal: (String) -> Unit,
+) {
+    val colors = Skald.colors
+    SectionHeader("GitHub", if (status.connected) "@${status.login ?: "connected"}" else "Optional")
+    Text(
+        "Public repository cards work without an account. Connect only to read private repositories you grant Skald access to.",
+        style = Skald.type.meta,
+        color = colors.tx3,
+        modifier = Modifier.padding(bottom = 10.dp),
+    )
+
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Skald.metrics.card)).background(colors.bg1)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(if (status.connected) "Connected" else "Not connected", style = Skald.type.row, color = colors.tx0)
+            Text(
+                when {
+                    status.connected -> "Token protected by Android Keystore"
+                    !status.configured -> "Private login is not configured in this build"
+                    !status.secretsProtected -> "Android Keystore is unavailable"
+                    else -> "Read-only repository access"
+                },
+                style = Skald.type.meta,
+                color = colors.tx3,
+            )
+        }
+        SettingsAction(
+            label = if (status.connected) "Disconnect" else if (status.busy) "Waiting…" else "Connect",
+            enabled = status.connected || (!status.busy && status.configured && status.secretsProtected),
+            onClick = if (status.connected) onDisconnect else onConnect,
+        )
+    }
+
+    status.deviceLogin?.let { login ->
+        Column(
+            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(Skald.metrics.card))
+                .background(colors.accentGhost).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Enter this code on GitHub", style = Skald.type.meta, color = colors.tx1)
+            Text(login.userCode, style = Skald.type.title, color = colors.accent)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsAction("Open GitHub") { onOpenExternal(login.verificationUri) }
+                SettingsAction("Cancel", onClick = onCancel)
+            }
+        }
+    }
+
+    status.error?.let {
+        Text(it, style = Skald.type.meta, color = colors.err, modifier = Modifier.padding(top = 8.dp))
+    }
+
+    status.installUrl?.takeIf { status.connected }?.let { installUrl ->
+        Text(
+            "Manage repository access ↗",
+            style = Skald.type.meta,
+            color = colors.accent,
+            modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp))
+                .clickable { onOpenExternal(installUrl) }.padding(8.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Text(
+        label,
+        style = Skald.type.metaSmall,
+        color = if (enabled) Skald.colors.accent else Skald.colors.tx4,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

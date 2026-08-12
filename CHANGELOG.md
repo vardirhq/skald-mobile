@@ -8,6 +8,13 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Live GitHub repository cards on Android now fetch public repository metadata without
+  login, cache public responses for offline use, refresh with ETags, and show repository,
+  issue, pull-request, release, and workflow details in the native Compose renderer.
+- Optional GitHub Device Flow login for private repository cards. Tokens are accepted only
+  when Android Keystore-backed encrypted storage is available; private responses stay in
+  memory and are never written to the public repository cache.
+
 - Added the mobile half of Skald's built-in extension system: versioned manifests,
   per-platform capabilities, collision-safe component and property registration, and a
   Compose renderer registry. The GitHub card is now the first registered extension instead

@@ -72,9 +72,9 @@ codes out.
   browsable and restores them to their original path.
 - **Schema templates** — each note kind can start with its own Markdown body, with
   `{{title}}` and `{{date}}` expanded when the note is created.
-- **GitHub card compatibility** — notes linked on desktop with `github: owner/repo`
-  keep that portable property, and bare or explicit `> [!github]` callouts render as
-  native repository cards that open GitHub. Live API details remain a desktop feature.
+- **Live GitHub cards** — notes linked with `github: owner/repo` render native repository
+  metadata, issue/PR counts, releases and workflow state. Public repositories need no login;
+  cached cards work offline, and optional Keystore-protected Device Flow unlocks private repos.
 - **Built-in extensions** — versioned manifests declare cross-client component identities,
   note properties, and per-platform capabilities. Compose renderers register independently,
   while unknown components remain ordinary portable callouts. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md).
