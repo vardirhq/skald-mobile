@@ -405,6 +405,21 @@ class MarkdownTest {
     }
 
     @Test
+    fun `tables retain cells formatting and alignment`() {
+        val table = Markdown.parse(
+            "| Name | State | Notes |\n| :--- | :---: | ---: |\n| **Skald** | ready | `local|first` |"
+        ).filterIsInstance<Markdown.Block.Table>().single()
+
+        assertEquals(listOf("Name", "State", "Notes"), table.headers.map(Markdown::plainText))
+        assertEquals(
+            listOf(Markdown.TableAlignment.Left, Markdown.TableAlignment.Center, Markdown.TableAlignment.Right),
+            table.alignments,
+        )
+        assertTrue(table.rows.single().first().single() is Markdown.Inline.Strong)
+        assertEquals("local|first", Markdown.plainText(table.rows.single().last()))
+    }
+
+    @Test
     fun `an image is distinguished from a link`() {
         val inlines = Markdown.inline("![alt](map.png) and [label](file.pdf)")
         assertTrue(inlines.any { it is Markdown.Inline.Image })

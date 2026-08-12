@@ -30,6 +30,13 @@ class ExtensionCatalogTest {
     }
 
     @Test
+    fun `Mermaid owns its portable fence and insertion`() {
+        val catalog = ExtensionCatalog(listOf(BuiltInExtensions.Mermaid))
+        assertEquals("dev.skald.mermaid", catalog.codeFence("MERMAID")?.manifest?.id)
+        assertEquals("dev.skald.mermaid", catalog.editorInsertion("mermaid.diagram")?.manifest?.id)
+    }
+
+    @Test
     fun `collisions fail instead of depending on registration order`() {
         val error = assertFailsWith<IllegalArgumentException> {
             ExtensionCatalog(listOf(extension("dev.skald.first"), extension("dev.skald.second")))

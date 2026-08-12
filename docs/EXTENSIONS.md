@@ -16,6 +16,10 @@ and normalize `owner/repository` before it writes the property and portable call
 Bold, Italic, Task, and Note link remain directly above the software keyboard for frequent use;
 **+ Insert** opens the complete named list. Physical keyboards may use `Ctrl+I` / `⌘I`.
 
+Mermaid owns the standard `mermaid` fenced language and a starter insertion. Android renders
+flowcharts locally as native, theme-aware diagrams without sending vault text to a rendering
+service. Mermaid families not yet supported on Android keep a clearly labelled source fallback.
+
 Unknown components still use the ordinary callout renderer. Their source is retained byte for
 byte, which lets newer desktop components pass safely through an older mobile installation.
 

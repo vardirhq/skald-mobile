@@ -8,6 +8,11 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Added native Markdown tables and local Mermaid flowchart rendering. Tables preserve inline
+  formatting and scroll horizontally on narrow screens; synced `mermaid` fences render as
+  theme-aware diagrams without uploading their source. Unsupported Mermaid families retain a
+  labelled source fallback instead of silently becoming paragraph text.
+
 ### Changed
 
 ### Fixed
@@ -20,7 +25,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
   tables, dividers, and registered extension components. It preserves the current selection in
   Live and Source modes, supports `Ctrl+I` / `⌘I` on physical keyboards, and includes a GitHub
   repository action that collects the note property before inserting its portable callout.
-
 ### Changed
 
 - Replaced the fourteen unexplained glyphs above the keyboard with a compact quick bar for Bold,
