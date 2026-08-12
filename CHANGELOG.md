@@ -12,6 +12,10 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Fixed
 
+- Fixed Mermaid flowcharts crashing the Android note screen by replacing the native Canvas/Paint
+  drawing path with bounded, Compose-native layout. Parser failures, unsupported diagrams, and
+  oversized graphs now fall back to labelled source instead of taking down the app.
+
 ## [0.3.3] - 2026-08-12
 
 ### Added
