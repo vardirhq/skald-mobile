@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.3.2] - 2026-08-12
+
+### Added
+
 - Added a searchable Insert sheet for headings, formatting, links, lists, tasks, callouts, code,
   tables, dividers, and registered extension components. It preserves the current selection in
   Live and Source modes, supports `Ctrl+I` / `⌘I` on physical keyboards, and includes a GitHub
@@ -20,7 +28,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
   descriptions in the Insert sheet instead of requiring users to decipher Markdown symbols.
 
 ### Fixed
-
 ## [0.3.1] - 2026-08-12
 
 ### Added
@@ -177,5 +184,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.3.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.0
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.1
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.2
