@@ -47,3 +47,5 @@ SKALD_GITHUB_APP_SLUG=skald-desktop \
 ```
 
 These values identify the GitHub App and are not secrets. Never package a GitHub client secret.
+GitHub Actions reads the same names from repository **Variables** for CI, release-candidate, and
+signed release builds.
