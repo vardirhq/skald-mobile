@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Sync is the only thing that reaches the network, and it is opt-in. -->
+    <!-- GESH sync and capability-declared extensions such as GitHub use the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Only for scanning a pairing QR code. -->

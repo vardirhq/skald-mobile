@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +60,7 @@ import no.vardir.skald.ui.screens.ThreadTarget
 import no.vardir.skald.ui.screens.ThreadsScreen
 import no.vardir.skald.ui.screens.TodayScreen
 import no.vardir.skald.ui.screens.TrashScreen
+import no.vardir.skald.ui.extensions.LocalGitHubService
 import no.vardir.skald.ui.theme.Skald
 import no.vardir.skald.ui.theme.SkaldTheme
 
@@ -78,12 +80,14 @@ fun SkaldShell(
     val syncStatus by viewModel.syncStatus.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val ticket by viewModel.pairingTicket.collectAsState()
+    val githubStatus by viewModel.githubStatus.collectAsState()
 
     // Back takes the top surface down rather than the app: only a press made with
     // nothing stacked falls through to the system. Surfaces that own a stack of
     // their own — the sync pane, the compose dialog — intercept it first.
     BackHandler(enabled = ui.backStep != null) { viewModel.back() }
 
+    CompositionLocalProvider(LocalGitHubService provides viewModel.github) {
     SkaldTheme(snapshot.settings.theme, snapshot.settings.density) {
         val colors = Skald.colors
         // The sheets. Each one is held as the thing it acts on rather than as a
@@ -165,6 +169,11 @@ fun SkaldShell(
                             onSchemaTemplate = viewModel::setSchemaTemplate,
                             onOpenTrash = { viewModel.setTrashOpen(true) },
                             onOpenSync = { viewModel.setSyncPaneOpen(true) },
+                            githubStatus = githubStatus,
+                            onConnectGitHub = { viewModel.connectGitHub(onOpenExternal) },
+                            onCancelGitHub = viewModel::cancelGitHubLogin,
+                            onDisconnectGitHub = viewModel::disconnectGitHub,
+                            onOpenExternal = onOpenExternal,
                         )
 
                         ui.openNote != null -> EditorScreen(
@@ -412,6 +421,7 @@ fun SkaldShell(
                 }
             }
         }
+    }
     }
 }
 

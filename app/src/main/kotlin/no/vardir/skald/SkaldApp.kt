@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import no.vardir.skald.data.AppPrefs
+import no.vardir.skald.data.GitHubService
 import no.vardir.skald.data.VaultRepository
 
 class SkaldApp : Application() {
@@ -13,6 +14,14 @@ class SkaldApp : Application() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val prefs: AppPrefs by lazy { AppPrefs(this).also { it.adoptLegacyVault() } }
+
+    val github: GitHubService by lazy {
+        GitHubService(
+            context = this,
+            clientId = BuildConfig.GITHUB_CLIENT_ID,
+            appSlug = BuildConfig.GITHUB_APP_SLUG,
+        )
+    }
 
     @Volatile private var opened: VaultRepository? = null
 

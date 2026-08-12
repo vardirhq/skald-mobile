@@ -16,8 +16,11 @@ byte, which lets newer desktop components pass safely through an older mobile in
 
 This is a registry for trusted code shipped with the application, not a loader for downloaded
 Kotlin, DEX, JavaScript, or WebView plugins. Each manifest declares capabilities per platform.
-The GitHub extension requests only external-link access on Android because mobile currently does
-not fetch repository data or authenticate.
+The GitHub extension requests network, authentication, secure-storage, settings, and external-link
+capabilities on Android. Its Compose renderer fetches public repository data anonymously, keeps a
+ten-minute ETag cache for offline rendering, and can use GitHub Device Flow for private repositories.
+Skald brokers those operations: the renderer never receives an access token, tokens are accepted
+only when Android Keystore-backed storage is available, and private responses remain in memory.
 
 Third-party packages would require signing, explicit capability grants, compatibility checks,
 revocation, and isolation before Skald could safely load them. Until then, new extensions are
@@ -31,3 +34,16 @@ reviewed and compiled as part of Skald Mobile.
    components differ or when ids, properties, or component types collide.
 4. Keep an honest non-network fallback and test descriptor lookup and normalization.
 5. Update desktop and mobile together before either client starts creating new component syntax.
+
+## GitHub build configuration
+
+Public cards require no configuration. Private access uses the same GitHub App contract as desktop.
+Enable Device Flow and provide the app's public identifiers while building:
+
+```bash
+SKALD_GITHUB_CLIENT_ID=Iv1.example \
+SKALD_GITHUB_APP_SLUG=skald-desktop \
+./gradlew :app:assembleDebug
+```
+
+These values identify the GitHub App and are not secrets. Never package a GitHub client secret.

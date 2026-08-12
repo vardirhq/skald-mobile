@@ -20,6 +20,7 @@ import no.vardir.skald.core.sync.SyncStatus
 import no.vardir.skald.core.text.Notes
 import no.vardir.skald.core.text.Tasks
 import no.vardir.skald.data.VaultRepository
+import no.vardir.skald.data.GitHubService
 
 enum class Tab { Today, Notes, Threads, Constellation }
 
@@ -73,10 +74,14 @@ data class UiState(
     }
 }
 
-class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
+class SkaldViewModel(
+    private val repository: VaultRepository,
+    val github: GitHubService,
+) : ViewModel() {
 
     val snapshot: StateFlow<VaultSnapshot> get() = repository.snapshot
     val syncStatus: StateFlow<SyncStatus> get() = repository.syncStatus
+    val githubStatus get() = github.status
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> get() = _ui.asStateFlow()
@@ -184,6 +189,18 @@ class SkaldViewModel(private val repository: VaultRepository) : ViewModel() {
     fun dismissMessage() {
         _ui.value = _ui.value.copy(message = null)
     }
+
+    fun connectGitHub(openExternal: (String) -> Unit) = viewModelScope.launch {
+        runCatching {
+            val login = github.beginLogin()
+            openExternal(login.verificationUri)
+            github.completeLogin()
+        }
+    }
+
+    fun cancelGitHubLogin() = github.cancelLogin()
+
+    fun disconnectGitHub() = github.disconnect()
 
     private fun say(message: String) {
         _ui.value = _ui.value.copy(message = message)
