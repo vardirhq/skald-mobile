@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.3.1] - 2026-08-12
+
+### Added
+
 - Live GitHub repository cards on Android now fetch public repository metadata without
   login, cache public responses for offline use, refresh with ETags, and show repository,
   issue, pull-request, release, and workflow details in the native Compose renderer.
@@ -27,7 +35,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 ### Changed
 
 ### Fixed
-
 ## [0.3.0] - 2026-08-11
 
 ### Added
@@ -159,5 +166,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.2.6]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.2.6
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.0
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.1
