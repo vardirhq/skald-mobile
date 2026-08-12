@@ -47,7 +47,14 @@ object Markdown {
         data class Tasks(val items: List<TaskLine>) : Block
         data class Bullets(val items: List<List<Inline>>) : Block
         data class Numbers(val items: List<List<Inline>>) : Block
+        data class Table(
+            val headers: List<List<Inline>>,
+            val alignments: List<TableAlignment>,
+            val rows: List<List<List<Inline>>>,
+        ) : Block
     }
+
+    enum class TableAlignment { Left, Center, Right }
 
     private val TASK_LINE = Regex("""^\s*[-*+]\s+\[[ xX]]\s+""")
     private val UL_LINE = Regex("""^\s*[-*+]\s+(?!\[[ xX]]\s)""")
@@ -68,15 +75,35 @@ object Markdown {
         val out = mutableListOf<Block>()
         var i = 0
 
-        fun startsBlock(line: String): Boolean =
-            line.isBlank() ||
+        fun tableAt(index: Int): Pair<List<String>, List<TableAlignment>>? {
+            if (index + 1 >= lines.size) return null
+            val header = splitTableRow(lines[index]) ?: return null
+            val delimiter = splitTableRow(lines[index + 1]) ?: return null
+            if (header.isEmpty() || delimiter.size != header.size) return null
+            val alignments = delimiter.map { cell ->
+                val marker = cell.trim()
+                if (!Regex("""^:?-{3,}:?$""").matches(marker)) return null
+                when {
+                    marker.startsWith(":") && marker.endsWith(":") -> TableAlignment.Center
+                    marker.endsWith(":") -> TableAlignment.Right
+                    else -> TableAlignment.Left
+                }
+            }
+            return header to alignments
+        }
+
+        fun startsBlock(index: Int): Boolean {
+            val line = lines[index]
+            return line.isBlank() ||
                 HEADING.containsMatchIn(line) ||
                 QUOTE.containsMatchIn(line) ||
                 CLOSING_FENCE.containsMatchIn(line) ||
                 TASK_LINE.containsMatchIn(line) ||
                 UL_LINE.containsMatchIn(line) ||
                 OL_LINE.containsMatchIn(line) ||
-                RULE.matches(line)
+                RULE.matches(line) ||
+                tableAt(index) != null
+        }
 
         while (i < lines.size) {
             val line = lines[i]
@@ -164,9 +191,28 @@ object Markdown {
                 continue
             }
 
+            val table = tableAt(i)
+            if (table != null) {
+                val (header, alignments) = table
+                i += 2
+                val rows = mutableListOf<List<List<Inline>>>()
+                while (i < lines.size) {
+                    val cells = splitTableRow(lines[i]) ?: break
+                    if (cells.isEmpty()) break
+                    rows += (0 until header.size).map { column -> inline(cells.getOrElse(column) { "" }) }
+                    i++
+                }
+                out += Block.Table(
+                    headers = header.map(::inline),
+                    alignments = alignments,
+                    rows = rows,
+                )
+                continue
+            }
+
             // Paragraph: soak up lines until something else starts.
             val buf = mutableListOf<String>()
-            while (i < lines.size && !startsBlock(lines[i])) {
+            while (i < lines.size && !startsBlock(i)) {
                 buf += lines[i]
                 i++
             }
@@ -175,6 +221,39 @@ object Markdown {
         }
 
         return out
+    }
+
+    /** GFM-style row splitting, preserving pipes escaped with `\` or inside code spans. */
+    private fun splitTableRow(line: String): List<String>? {
+        val trimmed = line.trim()
+        if ('|' !in trimmed) return null
+        val cells = mutableListOf<String>()
+        val current = StringBuilder()
+        var escaped = false
+        var code = false
+        for (character in trimmed) {
+            when {
+                escaped -> {
+                    current.append(character)
+                    escaped = false
+                }
+                character == '\\' -> escaped = true
+                character == '`' -> {
+                    code = !code
+                    current.append(character)
+                }
+                character == '|' && !code -> {
+                    cells += current.toString().trim()
+                    current.clear()
+                }
+                else -> current.append(character)
+            }
+        }
+        if (escaped) current.append('\\')
+        cells += current.toString().trim()
+        if (trimmed.startsWith('|')) cells.removeFirst()
+        if (trimmed.endsWith('|')) cells.removeLast()
+        return cells
     }
 
     // ---------- inline ----------

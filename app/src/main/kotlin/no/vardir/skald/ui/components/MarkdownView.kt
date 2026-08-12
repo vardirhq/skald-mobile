@@ -85,13 +85,17 @@ fun MarkdownView(blocks: List<Markdown.Block>, ctx: MarkdownContext, modifier: M
                     HeadingBlock(block, if (block.level == 2) stanza else null, ctx)
                 }
                 is Markdown.Block.Paragraph -> ParagraphBlock(block, ctx)
-                is Markdown.Block.Code -> CodeBlock(block)
+                is Markdown.Block.Code -> {
+                    val renderer = block.lang?.let(builtInExtensionRegistry::codeFence)
+                    if (renderer != null) renderer.render(block) else CodeBlock(block)
+                }
                 is Markdown.Block.Quote -> QuoteBlock(block, ctx)
                 is Markdown.Block.Callout -> CalloutBlock(block, ctx)
                 Markdown.Block.Rule -> RuleBlock()
                 is Markdown.Block.Tasks -> TasksBlock(block, ctx)
                 is Markdown.Block.Bullets -> ListBlock(block.items, ordered = false, ctx = ctx)
                 is Markdown.Block.Numbers -> ListBlock(block.items, ordered = true, ctx = ctx)
+                is Markdown.Block.Table -> TableBlock(block, ctx)
             }
         }
     }
@@ -290,6 +294,48 @@ private fun ListBlock(items: List<List<Markdown.Inline>>, ordered: Boolean, ctx:
             }
         }
     }
+}
+
+@Composable
+private fun TableBlock(block: Markdown.Block.Table, ctx: MarkdownContext) {
+    val colors = Skald.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 18.dp)
+            .horizontalScroll(rememberScrollState())
+            .clip(RoundedCornerShape(Skald.metrics.r3))
+            .border(BorderStroke(1.dp, colors.line2), RoundedCornerShape(Skald.metrics.r3)),
+    ) {
+        TableRow(block.headers, header = true, ctx = ctx)
+        block.rows.forEach { TableRow(it, header = false, ctx = ctx) }
+    }
+}
+
+@Composable
+private fun TableRow(cells: List<List<Markdown.Inline>>, header: Boolean, ctx: MarkdownContext) {
+    val colors = Skald.colors
+    Row(Modifier.width(IntrinsicSize.Max).height(IntrinsicSize.Min)) {
+        cells.forEachIndexed { index, cell ->
+            Box(
+                Modifier
+                    .width(144.dp)
+                    .fillMaxHeight()
+                    .background(if (header) colors.bg1 else Color.Transparent)
+                    .then(if (index > 0) Modifier.border(BorderStroke(0.5.dp, colors.line)) else Modifier)
+                    .padding(horizontal = 11.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                LinkedText(
+                    annotate(cell, ctx),
+                    ctx,
+                    if (header) Skald.type.small.copy(fontWeight = FontWeight.SemiBold) else Skald.type.small,
+                    if (header) colors.tx0 else colors.tx2,
+                )
+            }
+        }
+    }
+    Hairline()
 }
 
 @Composable

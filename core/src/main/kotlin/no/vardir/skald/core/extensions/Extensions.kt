@@ -27,6 +27,7 @@ data class ExtensionDescriptor(
     val markdownComponents: Set<String> = emptySet(),
     val noteProperties: Set<String> = emptySet(),
     val editorInsertions: Set<String> = emptySet(),
+    val codeFences: Set<String> = emptySet(),
 )
 
 /** Pure validation and lookup shared by every Android renderer surface. */
@@ -34,12 +35,14 @@ class ExtensionCatalog(descriptors: List<ExtensionDescriptor>) {
     val extensions: List<ExtensionDescriptor> = descriptors.toList()
     private val components: Map<String, ExtensionDescriptor>
     private val insertions: Map<String, ExtensionDescriptor>
+    private val fences: Map<String, ExtensionDescriptor>
 
     init {
         val ids = mutableSetOf<String>()
         val componentOwners = mutableMapOf<String, ExtensionDescriptor>()
         val propertyOwners = mutableMapOf<String, ExtensionDescriptor>()
         val insertionOwners = mutableMapOf<String, ExtensionDescriptor>()
+        val fenceOwners = mutableMapOf<String, ExtensionDescriptor>()
         for (extension in extensions) {
             val manifest = extension.manifest
             require(Regex("""^[a-z][a-z0-9.-]+$""").matches(manifest.id)) { "Invalid extension id: ${manifest.id}" }
@@ -61,13 +64,20 @@ class ExtensionCatalog(descriptors: List<ExtensionDescriptor>) {
                     "Duplicate editor insertion: $insertion"
                 }
             }
+            for (fence in extension.codeFences) {
+                val normalized = fence.lowercase()
+                require(normalized.isNotBlank()) { "Code fence cannot be empty" }
+                require(fenceOwners.put(normalized, extension) == null) { "Duplicate code fence: $normalized" }
+            }
         }
         components = componentOwners
         insertions = insertionOwners
+        fences = fenceOwners
     }
 
     fun component(type: String): ExtensionDescriptor? = components[type.lowercase()]
     fun editorInsertion(id: String): ExtensionDescriptor? = insertions[id]
+    fun codeFence(language: String): ExtensionDescriptor? = fences[language.lowercase()]
 }
 
 object BuiltInExtensions {
@@ -98,5 +108,21 @@ object BuiltInExtensions {
         markdownComponents = setOf("github"),
         noteProperties = setOf("github"),
         editorInsertions = setOf("github.repository-card"),
+    )
+
+    val Mermaid = ExtensionDescriptor(
+        manifest = ExtensionManifest(
+            id = "dev.skald.mermaid",
+            name = "Mermaid",
+            version = "1.0.0",
+            description = "Local diagrams rendered from portable Mermaid code fences.",
+            platforms = setOf(ExtensionPlatform.Desktop, ExtensionPlatform.Android),
+            capabilities = mapOf(
+                ExtensionPlatform.Desktop to emptySet(),
+                ExtensionPlatform.Android to emptySet(),
+            ),
+        ),
+        editorInsertions = setOf("mermaid.diagram"),
+        codeFences = setOf("mermaid"),
     )
 }
