@@ -9,6 +9,13 @@ case-insensitive component lookup in `core/.../extensions/Extensions.kt`. Compos
 registered separately under `app/.../ui/extensions/`, so the pure core never depends on Android
 UI code. `MarkdownView` asks the registry for a renderer; it does not know about GitHub.
 
+Editor insertion contributions live in the same renderer registry. The compact keyboard bar opens
+a searchable Insert sheet containing normal Markdown building blocks and every registered
+extension action. An insertion may require a declared note property; GitHub uses this to collect
+and normalize `owner/repository` before it writes the property and portable callout together.
+Bold, Italic, Task, and Note link remain directly above the software keyboard for frequent use;
+**+ Insert** opens the complete named list. Physical keyboards may use `Ctrl+I` / `⌘I`.
+
 Unknown components still use the ordinary callout renderer. Their source is retained byte for
 byte, which lets newer desktop components pass safely through an older mobile installation.
 
@@ -30,6 +37,7 @@ reviewed and compiled as part of Skald Mobile.
 
 1. Add or mirror the extension manifest and descriptor in core.
 2. Declare the exact component types and note properties it owns.
+   Declare editor insertion ids there too when the extension creates portable Markdown.
 3. Register matching Compose renderers. Startup validation fails when declared and supplied
    components differ or when ids, properties, or component types collide.
 4. Keep an honest non-network fallback and test descriptor lookup and normalization.

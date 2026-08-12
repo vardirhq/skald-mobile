@@ -33,6 +33,7 @@ import no.vardir.skald.core.text.Markdown
 import no.vardir.skald.data.GitHubService
 import no.vardir.skald.ui.components.MarkdownContext
 import no.vardir.skald.ui.theme.Skald
+import no.vardir.skald.core.text.Insertions
 
 val LocalGitHubService = staticCompositionLocalOf<GitHubService?> { null }
 
@@ -44,6 +45,23 @@ val githubRendererExtension = RendererExtension(
             val inherited = GitHubRepository.normalize(context.frontmatter["github"])
             GitHubRepositoryCard(explicit ?: inherited, context)
         },
+    ),
+    editorInsertions = listOf(
+        EditorInsertionContribution(
+            id = "github.repository-card",
+            label = "GitHub repository",
+            description = "Insert a live repository card",
+            glyph = "GH",
+            keywords = setOf("repo", "project", "card"),
+            template = Insertions.Template("> [!github]\n"),
+            property = InsertionPropertyPrompt(
+                key = "github",
+                label = "Repository",
+                placeholder = "owner/repository",
+                help = "Public repositories need no sign-in.",
+                normalize = GitHubRepository::normalize,
+            ),
+        ),
     ),
 )
 

@@ -26,6 +26,7 @@ class ExtensionCatalogTest {
     fun `component lookup is case insensitive`() {
         val catalog = ExtensionCatalog(listOf(BuiltInExtensions.GitHub))
         assertEquals("dev.skald.github", catalog.component("GITHUB")?.manifest?.id)
+        assertEquals("dev.skald.github", catalog.editorInsertion("github.repository-card")?.manifest?.id)
     }
 
     @Test
@@ -34,6 +35,14 @@ class ExtensionCatalogTest {
             ExtensionCatalog(listOf(extension("dev.skald.first"), extension("dev.skald.second")))
         }
         assertEquals(true, error.message?.contains("Duplicate Markdown component"))
+    }
+
+    @Test
+    fun `editor insertion collisions fail independently`() {
+        val first = extension("dev.skald.first", "first").copy(editorInsertions = setOf("demo.insert"))
+        val second = extension("dev.skald.second", "second").copy(editorInsertions = setOf("demo.insert"))
+        val error = assertFailsWith<IllegalArgumentException> { ExtensionCatalog(listOf(first, second)) }
+        assertEquals(true, error.message?.contains("Duplicate editor insertion"))
     }
 
     @Test

@@ -26,17 +26,20 @@ data class ExtensionDescriptor(
     val manifest: ExtensionManifest,
     val markdownComponents: Set<String> = emptySet(),
     val noteProperties: Set<String> = emptySet(),
+    val editorInsertions: Set<String> = emptySet(),
 )
 
 /** Pure validation and lookup shared by every Android renderer surface. */
 class ExtensionCatalog(descriptors: List<ExtensionDescriptor>) {
     val extensions: List<ExtensionDescriptor> = descriptors.toList()
     private val components: Map<String, ExtensionDescriptor>
+    private val insertions: Map<String, ExtensionDescriptor>
 
     init {
         val ids = mutableSetOf<String>()
         val componentOwners = mutableMapOf<String, ExtensionDescriptor>()
         val propertyOwners = mutableMapOf<String, ExtensionDescriptor>()
+        val insertionOwners = mutableMapOf<String, ExtensionDescriptor>()
         for (extension in extensions) {
             val manifest = extension.manifest
             require(Regex("""^[a-z][a-z0-9.-]+$""").matches(manifest.id)) { "Invalid extension id: ${manifest.id}" }
@@ -52,11 +55,19 @@ class ExtensionCatalog(descriptors: List<ExtensionDescriptor>) {
                 require(property.isNotBlank()) { "Note property cannot be empty" }
                 require(propertyOwners.put(property, extension) == null) { "Duplicate note property: $property" }
             }
+            for (insertion in extension.editorInsertions) {
+                require(insertion.isNotBlank()) { "Editor insertion cannot be empty" }
+                require(insertionOwners.put(insertion, extension) == null) {
+                    "Duplicate editor insertion: $insertion"
+                }
+            }
         }
         components = componentOwners
+        insertions = insertionOwners
     }
 
     fun component(type: String): ExtensionDescriptor? = components[type.lowercase()]
+    fun editorInsertion(id: String): ExtensionDescriptor? = insertions[id]
 }
 
 object BuiltInExtensions {
@@ -86,5 +97,6 @@ object BuiltInExtensions {
         ),
         markdownComponents = setOf("github"),
         noteProperties = setOf("github"),
+        editorInsertions = setOf("github.repository-card"),
     )
 }

@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.Role
@@ -42,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import no.vardir.skald.core.text.LiveMarkdown
@@ -77,6 +78,7 @@ fun LiveBlocks(
     focusRequester: FocusRequester,
     onFieldChange: (TextFieldValue) -> Unit,
     onJoinPrevious: () -> Unit,
+    onOpenInsert: () -> Unit,
     onOpenBlock: (LiveMarkdown.Block, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -87,7 +89,7 @@ fun LiveBlocks(
                 // keep its identity — and so its focus and its IME session —
                 // while the blocks under it are re-cut on every keystroke.
                 index == activeIndex -> key("live-field") {
-                    ActiveBlock(block, selection, fontSize, focusRequester, onFieldChange, onJoinPrevious)
+                    ActiveBlock(block, selection, fontSize, focusRequester, onFieldChange, onJoinPrevious, onOpenInsert)
                 }
 
                 // The gap between two blocks is deliberately not a tap target:
@@ -119,6 +121,7 @@ private fun ActiveBlock(
     focusRequester: FocusRequester,
     onChange: (TextFieldValue) -> Unit,
     onJoinPrevious: () -> Unit,
+    onOpenInsert: () -> Unit,
 ) {
     val colors = Skald.colors
     val code = block.kind == LiveMarkdown.Kind.Code
@@ -150,6 +153,14 @@ private fun ActiveBlock(
             // so there is no edit to notice after the fact — this is the one
             // key that has to be caught as it is pressed.
             .onPreviewKeyEvent { event ->
+                if (
+                    event.type == KeyEventType.KeyDown &&
+                    event.key == Key.I &&
+                    (event.isCtrlPressed || event.isMetaPressed)
+                ) {
+                    onOpenInsert()
+                    return@onPreviewKeyEvent true
+                }
                 val atStart = value.selection.collapsed && value.selection.start == 0
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Backspace && atStart) {
                     onJoinPrevious()
@@ -233,30 +244,23 @@ enum class FormatAction(val glyph: String, val label: String) {
     Done("✓", "Done"),
 }
 
-private val MARKS = listOf(
-    FormatAction.Heading,
+private val QUICK_MARKS = listOf(
     FormatAction.Bold,
     FormatAction.Italic,
-    FormatAction.Strike,
-    FormatAction.Code,
-    FormatAction.Wikilink,
-    FormatAction.Link,
-    FormatAction.Bullet,
-    FormatAction.Numbered,
     FormatAction.Task,
-    FormatAction.Quote,
-    FormatAction.Fence,
-    FormatAction.Rule,
-    FormatAction.Break,
+    FormatAction.Wikilink,
 )
 
 /**
- * The bar that sits on the keyboard. Everything on it is a toggle, so the way
- * out of a mark is the button that put it on — which is the only arrangement
- * that works when the alternative is placing a caret between two asterisks.
+ * The bar that sits on the keyboard. Only the actions used while typing stay
+ * here; the named Insert sheet owns the complete Markdown and extension set.
  */
 @Composable
-fun FormatBar(onAction: (FormatAction) -> Unit, modifier: Modifier = Modifier) {
+fun FormatBar(
+    onAction: (FormatAction) -> Unit,
+    onOpenInsert: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = Skald.colors
     Column(modifier.fillMaxWidth().background(colors.bg1)) {
         Hairline()
@@ -268,8 +272,14 @@ fun FormatBar(onAction: (FormatAction) -> Unit, modifier: Modifier = Modifier) {
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                for (action in MARKS) FormatButton(action, onAction)
+                for (action in QUICK_MARKS) QuickFormatButton(action, onAction)
             }
+            BarButton(
+                text = "+ Insert",
+                label = "Open Insert menu",
+                emphasized = true,
+                onClick = onOpenInsert,
+            )
             Box(
                 Modifier
                     .padding(end = 6.dp)
@@ -286,25 +296,53 @@ fun FormatBar(onAction: (FormatAction) -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FormatButton(action: FormatAction, onAction: (FormatAction) -> Unit) {
+private fun QuickFormatButton(action: FormatAction, onAction: (FormatAction) -> Unit) {
+    val text = when (action) {
+        FormatAction.Task -> "☐ Task"
+        FormatAction.Wikilink -> "[[ ]] Note"
+        else -> action.glyph
+    }
+    BarButton(
+        text = text,
+        label = action.label,
+        bold = action == FormatAction.Bold,
+        italic = action == FormatAction.Italic,
+        onClick = { onAction(action) },
+    )
+}
+
+@Composable
+private fun BarButton(
+    text: String,
+    label: String,
+    emphasized: Boolean = false,
+    bold: Boolean = false,
+    italic: Boolean = false,
+    onClick: () -> Unit,
+) {
     val colors = Skald.colors
     Box(
         Modifier
             .defaultMinSize(minWidth = 42.dp, minHeight = 40.dp)
             .clip(RoundedCornerShape(9.dp))
-            .clickable(role = Role.Button, onClickLabel = action.label) { onAction(action) }
-            .padding(horizontal = 8.dp),
+            .then(
+                if (emphasized) Modifier
+                    .background(colors.accentGhost)
+                    .border(BorderStroke(1.dp, colors.accentLine), RoundedCornerShape(9.dp))
+                else Modifier
+            )
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            action.glyph,
+            text,
             style = Skald.type.meta.copy(
-                fontSize = 14.sp,
-                fontWeight = if (action == FormatAction.Bold) FontWeight.Bold else null,
-                fontStyle = if (action == FormatAction.Italic) FontStyle.Italic else null,
-                textDecoration = if (action == FormatAction.Strike) TextDecoration.LineThrough else null,
+                fontSize = if (text.length > 3) 11.sp else 14.sp,
+                fontWeight = if (bold || emphasized) FontWeight.Bold else null,
+                fontStyle = if (italic) FontStyle.Italic else null,
             ),
-            color = colors.tx2,
+            color = if (emphasized) colors.accent else colors.tx2,
         )
     }
 }
