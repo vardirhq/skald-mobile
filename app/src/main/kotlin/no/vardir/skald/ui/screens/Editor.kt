@@ -30,6 +30,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -47,6 +54,7 @@ import no.vardir.skald.core.text.Dates
 import no.vardir.skald.core.text.Formatting
 import no.vardir.skald.core.text.Frontmatter
 import no.vardir.skald.core.text.LiveMarkdown
+import no.vardir.skald.core.text.Insertions
 import no.vardir.skald.core.text.Markdown
 import no.vardir.skald.core.text.Suggest
 import no.vardir.skald.core.text.Tasks
@@ -60,6 +68,8 @@ import no.vardir.skald.ui.components.Rune
 import no.vardir.skald.ui.components.SectionHeader
 import no.vardir.skald.ui.components.SuggestionBar
 import no.vardir.skald.ui.components.ThreadHintBar
+import no.vardir.skald.ui.extensions.EditorInsertionContribution
+import no.vardir.skald.ui.extensions.builtInExtensionRegistry
 import no.vardir.skald.ui.theme.Skald
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -164,6 +174,8 @@ fun EditorScreen(
         TextRange(start, (start + here.length).coerceIn(start, active.raw.length))
     } else TextRange.Zero
     val focusRequester = remember(note.meta.path) { FocusRequester() }
+    var insertMenuOpen by remember(note.meta.path) { mutableStateOf(false) }
+    var pendingExtension by remember(note.meta.path) { mutableStateOf<EditorInsertionContribution?>(null) }
 
     fun moveCaret(startLine: Int, edit: LiveMarkdown.Position, length: Int = 0) {
         caret = LiveCaret(startLine + edit.line, edit.col, length)
@@ -205,6 +217,34 @@ fun EditorScreen(
         setBody(LiveMarkdown.replaceBlock(body, block, edit.text))
         moveCaret(block.startLine, LiveMarkdown.positionAt(edit.text, edit.start), edit.end - edit.start)
         runCatching { focusRequester.requestFocus() }
+    }
+
+    fun applyTemplate(template: Insertions.Template, property: Pair<String, String>? = null) {
+        val block = active ?: return
+        val edit = Insertions.apply(block.raw, selection.min, selection.max, template)
+        val nextBody = LiveMarkdown.replaceBlock(body, block, edit.text)
+        val nextContent = LiveMarkdown.replaceBody(content, bodyStartLine, nextBody)
+        draft = property?.let { Frontmatter.apply(nextContent, mapOf(it.first to it.second)) } ?: nextContent
+        moveCaret(block.startLine, LiveMarkdown.positionAt(edit.text, edit.start), edit.end - edit.start)
+        runCatching { focusRequester.requestFocus() }
+    }
+
+    fun applyExtension(contribution: EditorInsertionContribution) {
+        val property = contribution.property
+        if (property != null && property.normalize(parsed.frontmatter[property.key]) == null) {
+            pendingExtension = contribution
+            return
+        }
+        applyTemplate(contribution.template)
+    }
+
+    fun chooseInsertion(target: InsertTarget) {
+        insertMenuOpen = false
+        when (target) {
+            is InsertTarget.Format -> applyFormat(target.action)
+            is InsertTarget.Template -> applyTemplate(target.template)
+            is InsertTarget.Extension -> applyExtension(target.contribution)
+        }
     }
 
     val trigger = remember(active?.raw, selection.min, activeIndex) { active?.let { Suggest.triggerAt(it.raw, selection.min) } }
@@ -249,6 +289,25 @@ fun EditorScreen(
         )
     }
 
+    if (insertMenuOpen) {
+        InsertMenuSheet(
+            extensionInsertions = builtInExtensionRegistry.editorInsertions,
+            onChoose = ::chooseInsertion,
+            onDismiss = { insertMenuOpen = false },
+        )
+    }
+    pendingExtension?.let { contribution ->
+        InsertionPropertySheet(
+            contribution = contribution,
+            onConfirm = { normalized ->
+                val property = requireNotNull(contribution.property)
+                applyTemplate(contribution.template, property.key to normalized)
+                pendingExtension = null
+            },
+            onDismiss = { pendingExtension = null },
+        )
+    }
+
     Column(modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 16.dp, bottom = 48.dp)
@@ -276,6 +335,7 @@ fun EditorScreen(
                     focusRequester = focusRequester,
                     onFieldChange = ::onFieldChange,
                     onJoinPrevious = ::joinPrevious,
+                    onOpenInsert = { insertMenuOpen = true },
                     onOpenBlock = ::openBlock,
                 )
             } else {
@@ -318,7 +378,7 @@ fun EditorScreen(
                     thread != null -> ThreadHintBar(summary = threadSummary(thread, todayIso), onOpen = { threadSheet = true })
                     else -> Unit
                 }
-                FormatBar(::applyFormat)
+                FormatBar(::applyFormat, onOpenInsert = { insertMenuOpen = true })
             }
         }
     }
@@ -413,6 +473,8 @@ private fun SourceEditor(
     val focus = LocalFocusManager.current
     val requester = remember(path) { FocusRequester() }
     var value by remember(path) { mutableStateOf(TextFieldValue(content)) }
+    var insertMenuOpen by remember(path) { mutableStateOf(false) }
+    var pendingExtension by remember(path) { mutableStateOf<EditorInsertionContribution?>(null) }
 
     val trigger = remember(value.text, value.selection.min) { Suggest.triggerAt(value.text, value.selection.min) }
     val offers = remember(trigger, vocabulary) { trigger?.let { Suggest.candidates(it, vocabulary) } ?: emptyList() }
@@ -429,6 +491,65 @@ private fun SourceEditor(
             return
         }
         put(formatEdit(action, LiveMarkdown.Kind.Paragraph, value.text, value.selection.min, value.selection.max))
+    }
+
+    fun insertTemplate(template: Insertions.Template, property: Pair<String, String>? = null) {
+        if (property == null) {
+            val edit = Insertions.apply(value.text, value.selection.min, value.selection.max, template)
+            put(Formatting.Edit(edit.text, edit.start, edit.end))
+            return
+        }
+
+        val parsed = Frontmatter.parse(value.text)
+        val bodyOffset = value.text.length - parsed.body.length
+        val selection = if (value.selection.min >= bodyOffset) {
+            TextRange(value.selection.min - bodyOffset, value.selection.max - bodyOffset)
+        } else {
+            TextRange(parsed.body.length)
+        }
+        val edit = Insertions.apply(parsed.body, selection.min, selection.max, template)
+        val withBody = LiveMarkdown.replaceBody(value.text, parsed.bodyStartLine, edit.text)
+        val next = Frontmatter.apply(withBody, mapOf(property.first to property.second))
+        val nextBodyOffset = next.length - Frontmatter.parse(next).body.length
+        put(Formatting.Edit(next, nextBodyOffset + edit.start, nextBodyOffset + edit.end))
+    }
+
+    fun applyExtension(contribution: EditorInsertionContribution) {
+        val property = contribution.property
+        val parsed = Frontmatter.parse(value.text)
+        if (property != null && property.normalize(parsed.frontmatter[property.key]) == null) {
+            pendingExtension = contribution
+            return
+        }
+        insertTemplate(contribution.template)
+    }
+
+    fun chooseInsertion(target: InsertTarget) {
+        insertMenuOpen = false
+        when (target) {
+            is InsertTarget.Format -> press(target.action)
+            is InsertTarget.Template -> insertTemplate(target.template)
+            is InsertTarget.Extension -> applyExtension(target.contribution)
+        }
+    }
+
+    if (insertMenuOpen) {
+        InsertMenuSheet(
+            extensionInsertions = builtInExtensionRegistry.editorInsertions,
+            onChoose = ::chooseInsertion,
+            onDismiss = { insertMenuOpen = false },
+        )
+    }
+    pendingExtension?.let { contribution ->
+        InsertionPropertySheet(
+            contribution = contribution,
+            onConfirm = { normalized ->
+                val property = requireNotNull(contribution.property)
+                insertTemplate(contribution.template, property.key to normalized)
+                pendingExtension = null
+            },
+            onDismiss = { pendingExtension = null },
+        )
     }
 
     Column(modifier.fillMaxSize()) {
@@ -448,11 +569,27 @@ private fun SourceEditor(
             },
             textStyle = Skald.type.code.copy(color = colors.tx1, fontSize = (fontSize - 2).sp),
             cursorBrush = SolidColor(colors.accent),
-            modifier = Modifier.weight(1f).fillMaxWidth().focusRequester(requester).padding(18.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .focusRequester(requester)
+                .onPreviewKeyEvent { event ->
+                    if (
+                        event.type == KeyEventType.KeyDown &&
+                        event.key == Key.I &&
+                        (event.isCtrlPressed || event.isMetaPressed)
+                    ) {
+                        insertMenuOpen = true
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .padding(18.dp),
         )
         if (offers.isNotEmpty() && trigger != null) {
             SuggestionBar(candidates = offers, onPick = { candidate -> put(Suggest.accept(value.text, trigger, candidate)) })
         }
-        FormatBar(::press)
+        FormatBar(::press, onOpenInsert = { insertMenuOpen = true })
     }
 }

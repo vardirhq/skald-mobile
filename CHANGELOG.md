@@ -8,7 +8,16 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Added a searchable Insert sheet for headings, formatting, links, lists, tasks, callouts, code,
+  tables, dividers, and registered extension components. It preserves the current selection in
+  Live and Source modes, supports `Ctrl+I` / `⌘I` on physical keyboards, and includes a GitHub
+  repository action that collects the note property before inserting its portable callout.
+
 ### Changed
+
+- Replaced the fourteen unexplained glyphs above the keyboard with a compact quick bar for Bold,
+  Italic, Task, Note link, Insert, and Done. Less-common actions now have visible names and
+  descriptions in the Insert sheet instead of requiring users to decipher Markdown symbols.
 
 ### Fixed
 
