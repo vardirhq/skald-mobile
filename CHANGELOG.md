@@ -12,10 +12,17 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Fixed
 
+## [0.3.4] - 2026-08-12
+
+### Added
+
+### Changed
+
+### Fixed
+
 - Fixed Mermaid flowcharts crashing the Android note screen by replacing the native Canvas/Paint
   drawing path with bounded, Compose-native layout. Parser failures, unsupported diagrams, and
   oversized graphs now fall back to labelled source instead of taking down the app.
-
 ## [0.3.3] - 2026-08-12
 
 ### Added
@@ -203,5 +210,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.3.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.2
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.3...HEAD
 [0.3.3]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.3
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.4
