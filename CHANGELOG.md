@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.3.3] - 2026-08-12
+
+### Added
+
 - Added native Markdown tables and local Mermaid flowchart rendering. Tables preserve inline
   formatting and scroll horizontally on narrow screens; synced `mermaid` fences render as
   theme-aware diagrams without uploading their source. Unsupported Mermaid families retain a
@@ -16,7 +24,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 ### Changed
 
 ### Fixed
-
 ## [0.3.2] - 2026-08-12
 
 ### Added
@@ -190,5 +197,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.3.1]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.1
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.2...HEAD
 [0.3.2]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.2
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.3
