@@ -68,12 +68,21 @@ object LiveMarkdown {
                 val start = i
                 var cursor = i + 1
                 var inCode = false
+                var nestedDepth = 0
                 var closeAt = -1
                 while (cursor < lines.size) {
-                    if (FENCE.containsMatchIn(lines[cursor])) inCode = !inCode
-                    if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) {
-                        closeAt = cursor
-                        break
+                    if (FENCE.containsMatchIn(lines[cursor])) {
+                        inCode = !inCode
+                        cursor++
+                        continue
+                    }
+                    if (!inCode && CONTAINER_OPEN.matches(lines[cursor])) {
+                        nestedDepth++
+                    } else if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) {
+                        if (nestedDepth > 0) nestedDepth-- else {
+                            closeAt = cursor
+                            break
+                        }
                     }
                     cursor++
                 }
@@ -82,7 +91,10 @@ object LiveMarkdown {
                     i = closeAt + 1
                     continue
                 }
-                // An unclosed directive is ordinary readable source.
+                // Keep malformed syntax visible and, crucially, make progress.
+                push(Kind.Paragraph, i, i)
+                i++
+                continue
             }
 
             if (FENCE.containsMatchIn(line)) {
@@ -223,8 +235,6 @@ object LiveMarkdown {
         val before = raw.substring(0, at)
         val after = raw.substring(at)
 
-        // A semantic container is source-editing a mini document. Enter should
-        // insert a line, not split the outer live block around invisible fences.
         if (kind == Kind.Code || kind == Kind.Container) return Edit("$before\n$after", at + 1)
 
         if (kind == Kind.List || kind == Kind.Task) {
@@ -272,7 +282,6 @@ object LiveMarkdown {
         if (index <= 0 || index >= blocks.size) return null
         val block = blocks[index]
         val previous = blocks[index - 1]
-        // Never erase or cross a semantic fence as an implicit Backspace join.
         if (block.kind == Kind.Container || previous.kind == Kind.Container) return null
 
         if (previous.kind == Kind.Blank) {
