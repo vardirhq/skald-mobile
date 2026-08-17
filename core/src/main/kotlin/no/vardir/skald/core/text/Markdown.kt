@@ -9,6 +9,10 @@ import no.vardir.skald.core.model.TaskStatus
  * Markdown stays the storage format; this is the reading surface. Parsing lives
  * here rather than in the UI so the renderer stays a pure function of a tree,
  * and so the block rules can be tested without a device attached.
+ *
+ * Skald semantic containers are runtime structure only: the canonical source is
+ * still fenced Markdown. V1 deliberately allows containers at document level
+ * but not containers inside containers.
  */
 object Markdown {
 
@@ -18,15 +22,12 @@ object Markdown {
         data class Strong(val children: List<Inline>) : Inline
         data class Emphasis(val children: List<Inline>) : Inline
         data class Strike(val children: List<Inline>) : Inline
-
-        /** `[[Target#Heading|display]]`. Resolution happens at render time. */
         data class Wikilink(val target: String, val heading: String?, val display: String) : Inline
         data class Link(val label: List<Inline>, val url: String) : Inline
         data class Image(val alt: String, val target: String) : Inline
     }
 
     data class TaskLine(
-        /** 1-based line in the raw file, so a tap can rewrite exactly that line. */
         val line: Int,
         val content: List<Inline>,
         val status: TaskStatus,
@@ -35,13 +36,21 @@ object Markdown {
         val tags: List<String>,
     )
 
+    enum class ContainerKind(val sourceName: String) {
+        Aside("aside"),
+        Gallery("gallery"),
+        Group("group");
+
+        companion object {
+            fun fromSource(value: String): ContainerKind? = entries.firstOrNull { it.sourceName == value }
+        }
+    }
+
     sealed interface Block {
         data class Heading(val level: Int, val content: List<Inline>, val line: Int) : Block
         data class Paragraph(val content: List<Inline>) : Block
         data class Code(val lang: String?, val text: String) : Block
         data class Quote(val content: List<Inline>) : Block
-
-        /** `> [!Premise] …` — the design's accented callout. */
         data class Callout(val label: String, val content: List<Inline>) : Block
         data object Rule : Block
         data class Tasks(val items: List<TaskLine>) : Block
@@ -51,6 +60,14 @@ object Markdown {
             val headers: List<List<Inline>>,
             val alignments: List<TableAlignment>,
             val rows: List<List<List<Inline>>>,
+        ) : Block
+        data class Container(
+            val kind: ContainerKind,
+            val children: List<Block>,
+            /** 1-based source line containing the opening `:::` fence. */
+            val startLine: Int,
+            /** 1-based source line containing the closing `:::` fence. */
+            val endLine: Int,
         ) : Block
     }
 
@@ -65,12 +82,12 @@ object Markdown {
     private val RULE = Regex("""^\s*(-{3,}|\*{3,}|_{3,})\s*$""")
     private val QUOTE = Regex("""^\s*>""")
     private val CALLOUT = Regex("""^\[!(\w+)]\s*(.*)$""")
+    private val CONTAINER_OPEN = Regex("""^\s*:::(aside|gallery|group)\s*$""")
+    private val CONTAINER_CLOSE = Regex("""^\s*:::\s*$""")
 
-    /**
-     * @param lineOffset line index of the body within the raw file, so task line
-     *   numbers point at the right line of the file on disk.
-     */
-    fun parse(body: String, lineOffset: Int = 0): List<Block> {
+    fun parse(body: String, lineOffset: Int = 0): List<Block> = parseInternal(body, lineOffset, allowContainers = true)
+
+    private fun parseInternal(body: String, lineOffset: Int, allowContainers: Boolean): List<Block> {
         val lines = body.split("\n")
         val out = mutableListOf<Block>()
         var i = 0
@@ -102,46 +119,54 @@ object Markdown {
                 UL_LINE.containsMatchIn(line) ||
                 OL_LINE.containsMatchIn(line) ||
                 RULE.matches(line) ||
+                (allowContainers && CONTAINER_OPEN.matches(line)) ||
                 tableAt(index) != null
         }
 
         while (i < lines.size) {
             val line = lines[i]
+            if (line.isBlank()) { i++; continue }
 
-            if (line.isBlank()) {
-                i++
-                continue
+            if (allowContainers) {
+                val opener = CONTAINER_OPEN.find(line)
+                if (opener != null) {
+                    var cursor = i + 1
+                    var inCode = false
+                    var closeAt = -1
+                    while (cursor < lines.size) {
+                        if (CLOSING_FENCE.containsMatchIn(lines[cursor])) inCode = !inCode
+                        if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) { closeAt = cursor; break }
+                        cursor++
+                    }
+                    if (closeAt >= 0) {
+                        val kind = requireNotNull(ContainerKind.fromSource(opener.groupValues[1]))
+                        val childSource = lines.subList(i + 1, closeAt).joinToString("\n")
+                        val children = parseInternal(childSource, lineOffset + i + 1, allowContainers = false)
+                        out += Block.Container(kind, children, i + 1 + lineOffset, closeAt + 1 + lineOffset)
+                        i = closeAt + 1
+                        continue
+                    }
+                    // Unclosed syntax is deliberately left readable as ordinary Markdown.
+                }
             }
 
             val fence = FENCE.find(line)
             if (fence != null) {
                 val code = mutableListOf<String>()
                 i++
-                while (i < lines.size && !CLOSING_FENCE.containsMatchIn(lines[i])) {
-                    code += lines[i]
-                    i++
-                }
-                i++ // closing fence, if there was one
+                while (i < lines.size && !CLOSING_FENCE.containsMatchIn(lines[i])) { code += lines[i]; i++ }
+                if (i < lines.size) i++
                 out += Block.Code(fence.groupValues[1].ifEmpty { null }, code.joinToString("\n"))
                 continue
             }
 
             val heading = HEADING.find(line)
             if (heading != null) {
-                out += Block.Heading(
-                    level = heading.groupValues[1].length,
-                    content = inline(heading.groupValues[2]),
-                    line = i + 1 + lineOffset,
-                )
-                i++
-                continue
+                out += Block.Heading(heading.groupValues[1].length, inline(heading.groupValues[2]), i + 1 + lineOffset)
+                i++; continue
             }
 
-            if (RULE.matches(line)) {
-                out += Block.Rule
-                i++
-                continue
-            }
+            if (RULE.matches(line)) { out += Block.Rule; i++; continue }
 
             if (QUOTE.containsMatchIn(line)) {
                 val quoted = mutableListOf<String>()
@@ -153,9 +178,7 @@ object Markdown {
                 out += if (callout != null) {
                     val rest = (listOf(callout.groupValues[2]) + quoted.drop(1)).joinToString(" ").trim()
                     Block.Callout(callout.groupValues[1], inline(rest))
-                } else {
-                    Block.Quote(inline(quoted.joinToString(" ")))
-                }
+                } else Block.Quote(inline(quoted.joinToString(" ")))
                 continue
             }
 
@@ -163,32 +186,26 @@ object Markdown {
                 val start = i
                 while (i < lines.size && TASK_LINE.containsMatchIn(lines[i])) i++
                 val chunk = lines.subList(start, i).joinToString("\n")
-                out += Block.Tasks(
-                    Tasks.extract(chunk, start + lineOffset).map {
-                        TaskLine(it.line, inline(it.content), it.status, it.priority, it.due, it.tags)
-                    }
-                )
+                out += Block.Tasks(Tasks.extract(chunk, start + lineOffset).map {
+                    TaskLine(it.line, inline(it.content), it.status, it.priority, it.due, it.tags)
+                })
                 continue
             }
 
             if (UL_LINE.containsMatchIn(line)) {
                 val items = mutableListOf<List<Inline>>()
                 while (i < lines.size && UL_LINE.containsMatchIn(lines[i])) {
-                    items += inline(lines[i].replace(Regex("""^\s*[-*+]\s+"""), ""))
-                    i++
+                    items += inline(lines[i].replace(Regex("""^\s*[-*+]\s+"""), "")); i++
                 }
-                out += Block.Bullets(items)
-                continue
+                out += Block.Bullets(items); continue
             }
 
             if (OL_LINE.containsMatchIn(line)) {
                 val items = mutableListOf<List<Inline>>()
                 while (i < lines.size && OL_LINE.containsMatchIn(lines[i])) {
-                    items += inline(lines[i].replace(Regex("""^\s*\d+[.)]\s+"""), ""))
-                    i++
+                    items += inline(lines[i].replace(Regex("""^\s*\d+[.)]\s+"""), "")); i++
                 }
-                out += Block.Numbers(items)
-                continue
+                out += Block.Numbers(items); continue
             }
 
             val table = tableAt(i)
@@ -202,28 +219,21 @@ object Markdown {
                     rows += (0 until header.size).map { column -> inline(cells.getOrElse(column) { "" }) }
                     i++
                 }
-                out += Block.Table(
-                    headers = header.map(::inline),
-                    alignments = alignments,
-                    rows = rows,
-                )
+                out += Block.Table(header.map(::inline), alignments, rows)
                 continue
             }
 
-            // Paragraph: soak up lines until something else starts.
             val buf = mutableListOf<String>()
-            while (i < lines.size && !startsBlock(i)) {
-                buf += lines[i]
-                i++
-            }
+            while (i < lines.size && !startsBlock(i)) { buf += lines[i]; i++ }
+            // A standalone closing container fence in a nested parse is source syntax,
+            // not a reason to wedge the parser. Consume it as readable text.
+            if (buf.isEmpty() && i < lines.size && CONTAINER_CLOSE.matches(lines[i])) { buf += lines[i]; i++ }
             val text = buf.joinToString(" ").trim()
             if (text.isNotEmpty()) out += Block.Paragraph(inline(text))
         }
-
         return out
     }
 
-    /** GFM-style row splitting, preserving pipes escaped with `\` or inside code spans. */
     private fun splitTableRow(line: String): List<String>? {
         val trimmed = line.trim()
         if ('|' !in trimmed) return null
@@ -233,19 +243,10 @@ object Markdown {
         var code = false
         for (character in trimmed) {
             when {
-                escaped -> {
-                    current.append(character)
-                    escaped = false
-                }
+                escaped -> { current.append(character); escaped = false }
                 character == '\\' -> escaped = true
-                character == '`' -> {
-                    code = !code
-                    current.append(character)
-                }
-                character == '|' && !code -> {
-                    cells += current.toString().trim()
-                    current.clear()
-                }
+                character == '`' -> { code = !code; current.append(character) }
+                character == '|' && !code -> { cells += current.toString().trim(); current.clear() }
                 else -> current.append(character)
             }
         }
@@ -255,8 +256,6 @@ object Markdown {
         if (trimmed.endsWith('|')) cells.removeLast()
         return cells
     }
-
-    // ---------- inline ----------
 
     private val INLINE_RE = Regex(
         """(`[^`\n]+`)""" +
@@ -277,43 +276,29 @@ object Markdown {
         var rest = text
         while (rest.isNotEmpty()) {
             val m = INLINE_RE.find(rest)
-            if (m == null) {
-                out += Inline.Text(rest)
-                break
-            }
+            if (m == null) { out += Inline.Text(rest); break }
             if (m.range.first > 0) out += Inline.Text(rest.substring(0, m.range.first))
             val token = m.value
             rest = rest.substring(m.range.last + 1)
-
             out += when {
                 token.startsWith("`") -> Inline.Code(token.trim('`'))
-
                 token.startsWith("[[") -> {
                     val parts = Wikilinks.parse(token.removeSurrounding("[[", "]]"))
                     Inline.Wikilink(parts.target, parts.heading, parts.display)
                 }
-
-                token.startsWith("![") ->
-                    IMAGE_RE.find(token)?.let { Inline.Image(it.groupValues[1], it.groupValues[2]) }
-                        ?: Inline.Text(token)
-
+                token.startsWith("![") -> IMAGE_RE.find(token)?.let { Inline.Image(it.groupValues[1], it.groupValues[2]) } ?: Inline.Text(token)
                 token.startsWith("**") -> Inline.Strong(inline(token.removeSurrounding("**")))
                 token.startsWith("__") -> Inline.Strong(inline(token.removeSurrounding("__")))
                 token.startsWith("~~") -> Inline.Strike(inline(token.removeSurrounding("~~")))
                 token.startsWith("*") -> Inline.Emphasis(inline(token.removeSurrounding("*")))
                 token.startsWith("_") -> Inline.Emphasis(inline(token.removeSurrounding("_")))
-
-                token.startsWith("[") ->
-                    LINK_RE.find(token)?.let { Inline.Link(inline(it.groupValues[1]), it.groupValues[2]) }
-                        ?: Inline.Text(token)
-
+                token.startsWith("[") -> LINK_RE.find(token)?.let { Inline.Link(inline(it.groupValues[1]), it.groupValues[2]) } ?: Inline.Text(token)
                 else -> Inline.Text(token)
             }
         }
         return out
     }
 
-    /** Flatten a run of inlines back to plain text, for previews and snippets. */
     fun plainText(inlines: List<Inline>): String = buildString {
         for (node in inlines) when (node) {
             is Inline.Text -> append(node.text)
