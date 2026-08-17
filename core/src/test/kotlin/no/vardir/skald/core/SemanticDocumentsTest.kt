@@ -3,9 +3,12 @@ package no.vardir.skald.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import no.vardir.skald.core.text.Insertions
+import no.vardir.skald.core.text.LiveMarkdown
 import no.vardir.skald.core.text.Markdown
+import no.vardir.skald.core.text.NoteThemes
 
 class SemanticDocumentsTest {
     @Test
@@ -79,5 +82,65 @@ This matters.
             Insertions.semanticContainer("aside", "Supporting context"),
         )
         assertTrue(":::aside\n\n$selected\n\n:::" in edit.text)
+    }
+
+    @Test
+    fun `live editor keeps a container in one protected region`() {
+        val body = "Before\n\n:::group\n## Inside\n\nText\n:::\n\nAfter"
+        val blocks = LiveMarkdown.split(body)
+        val semantic = blocks.single { it.kind == LiveMarkdown.Kind.Container }
+        assertEquals(2, semantic.startLine)
+        assertEquals(6, semantic.endLine)
+        assertTrue(semantic.raw.startsWith(":::group"))
+        assertTrue(semantic.raw.endsWith(":::"))
+    }
+
+    @Test
+    fun `backspace join never crosses semantic boundary`() {
+        val body = "Before\n\n:::aside\nInside\n:::\n\nAfter"
+        val blocks = LiveMarkdown.split(body)
+        val containerIndex = blocks.indexOfFirst { it.kind == LiveMarkdown.Kind.Container }
+        assertNull(LiveMarkdown.joinWithPrevious(body, blocks, containerIndex))
+        val afterIndex = blocks.indexOfFirst { it.raw == "After" }
+        // The blank line before After can still be joined normally; only the semantic block itself is protected.
+        assertTrue(afterIndex > containerIndex)
+    }
+
+    @Test
+    fun `mobile theme parser accepts portable tokens and ignores selectors`() {
+        val theme = NoteThemes.parse(
+            "field-journal",
+            """
+.sk-note {
+  --skald-theme: 1;
+  --note-bg: #ece5d2;
+  --note-tx: #302d24;
+  --note-accent: #61745d;
+  --note-font-body: Georgia, serif;
+}
+.sk-container--aside { transform: rotate(-.2deg); }
+"""
+        )
+        assertEquals(1, theme.contractVersion)
+        assertEquals("#ece5d2", theme["--note-bg"])
+        assertEquals("#61745d", theme["--note-accent"])
+        assertNull(theme["--note-font-body"])
+        assertEquals(3, theme.tokens.size)
+    }
+
+    @Test
+    fun `theme precedence matches desktop`() {
+        assertEquals(
+            "note-theme",
+            NoteThemes.resolveName("note-theme", "Project", mapOf("Project" to "project-theme"), "vault-theme"),
+        )
+        assertEquals(
+            "project-theme",
+            NoteThemes.resolveName(null, "Project", mapOf("Project" to "project-theme"), "vault-theme"),
+        )
+        assertEquals(
+            "vault-theme",
+            NoteThemes.resolveName(null, "Project", emptyMap(), "vault-theme"),
+        )
     }
 }
