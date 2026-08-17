@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.4.0] - 2026-08-17
+
+### Added
+
 - Added mobile compatibility for Skald semantic documents. Android now parses `:::aside`,
   `:::gallery`, and `:::group` into real tree nodes whose children remain ordinary Markdown
   blocks, renders them as native Compose structures, and exposes all three from the Insert sheet.
@@ -27,7 +35,6 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
   corrupting the surrounding document.
 
 ### Fixed
-
 ## [0.3.4] - 2026-08-12
 
 ### Added
@@ -228,5 +235,7 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 [0.3.3]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.3
 
-[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.3.4...HEAD
 [0.3.4]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.3.4
+
+[Unreleased]: https://github.com/vardirhq/skald-mobile/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/vardirhq/skald-mobile/releases/tag/v0.4.0
