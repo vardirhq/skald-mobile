@@ -1,32 +1,25 @@
 package no.vardir.skald.core.text
 
 /**
- * The live editor's model, ported from the desktop's `src-shared/liveMarkdown.ts`
- * so the two builds split a note the same way.
- *
- * A body is cut into blocks; the one holding the caret is edited as raw Markdown
- * while every other block stays rendered. Everything here is a pure function of
- * text and an offset, which is what lets the phone's editor be tested without a
- * device attached — the same bargain the rest of `core` makes.
+ * The live editor's source-oriented projection. Semantic containers are one
+ * editing region on mobile v1: inactive containers render through the document
+ * tree, while tapping one exposes its complete portable fenced source. This
+ * keeps fences from leaking into neighbouring rendered blocks and prevents
+ * Backspace/Enter from accidentally crossing an invisible container boundary.
  */
 object LiveMarkdown {
 
-    enum class Kind { Blank, Heading, Code, Quote, Task, List, Rule, Paragraph }
+    enum class Kind { Blank, Heading, Code, Quote, Task, List, Rule, Paragraph, Container }
 
     data class Block(
-        /** Stable only for as long as the block keeps its lines. */
         val id: String,
         val kind: Kind,
-        /** 0-based, within the body. */
         val startLine: Int,
         val endLine: Int,
         val raw: String,
     )
 
-    /** A caret, as a position in the whole body rather than in one block. */
     data class Position(val line: Int, val col: Int)
-
-    /** A block rewritten, and where the caret belongs inside the rewrite. */
     data class Edit(val raw: String, val caret: Int)
 
     private val TASK_LINE = Regex("""^\s*[-*+]\s+\[[ xX]]\s+""")
@@ -36,14 +29,13 @@ object LiveMarkdown {
     private val FENCE = Regex("""^\s*```""")
     private val HEADING = Regex("""^#{1,6}\s+""")
     private val QUOTE = Regex("""^\s*>""")
+    private val CONTAINER_OPEN = Regex("""^\s*:::(aside|gallery|group)\s*$""")
+    private val CONTAINER_CLOSE = Regex("""^\s*:::\s*$""")
 
-    /** The bullet, number or checkbox that opens a list line, with its indent. */
     private val LIST_PREFIX = Regex("""^(\s*)([-*+]\s+\[[ xX]]\s+|[-*+]\s+|\d+[.)]\s+)""")
     private val ORDERED_PREFIX = Regex("""^(\s*)(\d+)([.)])(\s+)$""")
     private val QUOTE_PREFIX = Regex("""^(\s*>\s?)""")
     private val TICKED = Regex("""\[[xX]]""")
-
-    // ---------- splitting ----------
 
     fun split(body: String): List<Block> {
         if (body.isEmpty()) return listOf(Block("b0-0", Kind.Blank, 0, 0, ""))
@@ -70,6 +62,27 @@ object LiveMarkdown {
                 while (i < lines.size && lines[i].isBlank()) i++
                 push(Kind.Blank, start, i - 1)
                 continue
+            }
+
+            if (CONTAINER_OPEN.matches(line)) {
+                val start = i
+                var cursor = i + 1
+                var inCode = false
+                var closeAt = -1
+                while (cursor < lines.size) {
+                    if (FENCE.containsMatchIn(lines[cursor])) inCode = !inCode
+                    if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) {
+                        closeAt = cursor
+                        break
+                    }
+                    cursor++
+                }
+                if (closeAt >= 0) {
+                    push(Kind.Container, start, closeAt)
+                    i = closeAt + 1
+                    continue
+                }
+                // An unclosed directive is ordinary readable source.
             }
 
             if (FENCE.containsMatchIn(line)) {
@@ -125,7 +138,8 @@ object LiveMarkdown {
                 !TASK_LINE.containsMatchIn(lines[i]) &&
                 !UL_LINE.containsMatchIn(lines[i]) &&
                 !OL_LINE.containsMatchIn(lines[i]) &&
-                !HR_LINE.containsMatchIn(lines[i])
+                !HR_LINE.containsMatchIn(lines[i]) &&
+                !CONTAINER_OPEN.matches(lines[i])
             ) {
                 i++
             }
@@ -135,16 +149,8 @@ object LiveMarkdown {
         return blocks
     }
 
-    /** The block that holds this body line, or null when the caret is nowhere. */
     fun blockAt(blocks: List<Block>, line: Int): Int =
         blocks.indexOfFirst { line >= it.startLine && line <= it.endLine }
-
-    // ---------- caret arithmetic ----------
-    //
-    // The caret is held as a line and column in the whole body, not as an offset
-    // into one block: a keystroke can re-split the blocks under it — pressing
-    // Enter is exactly that — and a line survives the re-split where an offset
-    // into a block that no longer exists would not.
 
     fun offsetAt(raw: String, line: Int, col: Int): Int {
         val lines = raw.split("\n")
@@ -159,21 +165,6 @@ object LiveMarkdown {
         return Position(before.size - 1, before.last().length)
     }
 
-    /**
-     * Maps a position in a block's *rendered* text back to an offset in its
-     * Markdown source.
-     *
-     * A reader taps what they can see, and what they can see is the source with
-     * the syntax taken out — so the two are walked in step. Characters that agree
-     * advance both; anything left over in the source is markup the reader never
-     * saw, and is stepped over. Whitespace is treated as equivalent throughout,
-     * because a rendered paragraph joins source lines with a space.
-     *
-     * Where the rendered text is not the source minus syntax — a due date shown
-     * as "1 May" — alignment cannot be exact, so the search for the next agreeing
-     * character is bounded and falls back to the last position that did agree.
-     * Being a few characters out beats landing at the end of the block.
-     */
     fun sourceOffsetFromRendered(raw: String, rendered: String): Int {
         val maxMarkupRun = 400
         var source = 0
@@ -184,9 +175,6 @@ object LiveMarkdown {
             if (rendered[shown].isWhitespace()) {
                 while (shown < rendered.length && rendered[shown].isWhitespace()) shown++
                 while (source < raw.length && raw[source].isWhitespace()) source++
-                // Landing at the start of a source line means the marker that
-                // opens it — a bullet, a number, a quote caret — is still ahead.
-                // A reader who taps the start of a list item means its text.
                 if (source > 0 && raw[source - 1] == '\n') {
                     val rest = raw.substring(source)
                     val marker = LIST_PREFIX.find(rest)?.value ?: QUOTE_PREFIX.find(rest)?.groupValues?.get(1)
@@ -207,15 +195,6 @@ object LiveMarkdown {
         return if (shown >= rendered.length) agreed else source
     }
 
-    // ---------- typing ----------
-
-    /**
-     * Was this change exactly one newline typed at `caret`?
-     *
-     * A phone has no key events to intercept — the soft keyboard hands over a
-     * whole new string — so Enter is recognised after the fact, by the shape of
-     * the edit, and then replayed through [enter] instead.
-     */
     fun insertedNewline(before: String, after: String, caret: Int): Int? {
         if (after.length != before.length + 1) return null
         if (caret < 1 || caret > after.length) return null
@@ -224,14 +203,12 @@ object LiveMarkdown {
         return caret - 1
     }
 
-    /** The marker that should open the item after this one. */
     private fun nextMarker(prefix: String): String {
         val ordered = ORDERED_PREFIX.find(prefix)
         if (ordered != null) {
             val (indent, number, punct, space) = ordered.destructured
             return "$indent${(number.toIntOrNull() ?: 1) + 1}$punct$space"
         }
-        // A checked box does not carry its tick to the next item.
         return TICKED.replace(prefix, "[ ]")
     }
 
@@ -241,18 +218,14 @@ object LiveMarkdown {
     private fun lineEnd(raw: String, caret: Int): Int =
         raw.indexOf('\n', caret).let { if (it < 0) raw.length else it }
 
-    /**
-     * Enter. Inside a list it opens the next item; on an empty item it leaves the
-     * list; inside code it is just a newline. Everywhere else it ends this block
-     * and opens a new one — the blank line between them is what makes them two
-     * blocks rather than one paragraph with a newline in it.
-     */
     fun enter(kind: Kind, raw: String, caret: Int): Edit {
         val at = caret.coerceIn(0, raw.length)
         val before = raw.substring(0, at)
         val after = raw.substring(at)
 
-        if (kind == Kind.Code) return Edit("$before\n$after", at + 1)
+        // A semantic container is source-editing a mini document. Enter should
+        // insert a line, not split the outer live block around invisible fences.
+        if (kind == Kind.Code || kind == Kind.Container) return Edit("$before\n$after", at + 1)
 
         if (kind == Kind.List || kind == Kind.Task) {
             val start = lineStart(raw, at)
@@ -262,8 +235,6 @@ object LiveMarkdown {
             if (match != null) {
                 val marker = match.value
                 if (line.trim() == marker.trim()) {
-                    // An empty item means "I am done listing". Drop it and start
-                    // a block.
                     val head = raw.substring(0, start).removeSuffix("\n")
                     val tail = raw.substring(end)
                     val joined = if (head.isNotEmpty()) "$head\n\n" else ""
@@ -287,33 +258,24 @@ object LiveMarkdown {
         return Edit("$head\n\n$after", head.length + 2)
     }
 
-    /**
-     * A line break that stays inside this block. Markdown only breaks a line when
-     * it is asked to, so the break is written the portable way — two trailing
-     * spaces — rather than left as a newline the renderer would swallow.
-     */
     fun softBreak(kind: Kind, raw: String, caret: Int): Edit {
         val at = caret.coerceIn(0, raw.length)
         val before = raw.substring(0, at)
         val after = raw.substring(at)
-        if (kind == Kind.Code) return Edit("$before\n$after", at + 1)
+        if (kind == Kind.Code || kind == Kind.Container) return Edit("$before\n$after", at + 1)
         val padded = if (before.isNotEmpty() && before.last().isWhitespace()) before.trimEnd(' ', '\t') else before
         val inserted = "$padded  \n"
         return Edit(inserted + after, inserted.length)
     }
 
-    /**
-     * Backspace at the very top of a block reaches into the one above it, closing
-     * the gap between two blocks — or removing one you opened by accident. The
-     * caret lands at the seam.
-     */
     fun joinWithPrevious(body: String, blocks: List<Block>, index: Int): Pair<String, Position>? {
         if (index <= 0 || index >= blocks.size) return null
         val block = blocks[index]
         val previous = blocks[index - 1]
+        // Never erase or cross a semantic fence as an implicit Backspace join.
+        if (block.kind == Kind.Container || previous.kind == Kind.Container) return null
 
         if (previous.kind == Kind.Blank) {
-            // Remove the paragraph break, so this block joins the one above.
             val body2 = replaceBlock(body, previous.startLine, block.endLine, block.raw)
             return body2 to Position(previous.startLine, 0)
         }
@@ -321,8 +283,6 @@ object LiveMarkdown {
         val body2 = replaceBlock(body, previous.startLine, block.endLine, previous.raw + block.raw)
         return body2 to Position(previous.startLine + lines.size - 1, lines.last().length)
     }
-
-    // ---------- splicing ----------
 
     fun replaceBlock(body: String, startLine: Int, endLine: Int, raw: String): String {
         val lines = if (body.isEmpty()) listOf("") else body.split("\n")
@@ -339,7 +299,6 @@ object LiveMarkdown {
     fun replaceBlock(body: String, block: Block, raw: String): String =
         replaceBlock(body, block.startLine, block.endLine, raw)
 
-    /** Put an edited body back under the frontmatter it was cut from. */
     fun replaceBody(content: String, bodyStartLine: Int, body: String): String {
         if (bodyStartLine <= 0) return body
         val frontmatter = content.split("\n").take(bodyStartLine).joinToString("\n")
