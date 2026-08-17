@@ -40,9 +40,11 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import no.vardir.skald.core.model.AttachmentRef
+import no.vardir.skald.core.model.NoteThemeSpec
 import no.vardir.skald.core.model.TaskStatus
 import no.vardir.skald.core.text.Markdown
 import no.vardir.skald.ui.extensions.builtInExtensionRegistry
+import no.vardir.skald.ui.theme.NoteThemeSurface
 import no.vardir.skald.ui.theme.Skald
 
 data class MarkdownContext(
@@ -54,6 +56,7 @@ data class MarkdownContext(
     val toggleTask: (Int, Boolean) -> Unit,
     val todayIso: String,
     val frontmatter: Map<String, Any?> = emptyMap(),
+    val noteTheme: NoteThemeSpec? = null,
     val tapAt: ((String) -> Unit)? = null,
 )
 
@@ -62,6 +65,13 @@ private const val TAG_LINK = "link"
 
 @Composable
 fun MarkdownView(blocks: List<Markdown.Block>, ctx: MarkdownContext, modifier: Modifier = Modifier) {
+    NoteThemeSurface(ctx.noteTheme, modifier) {
+        MarkdownBlocks(blocks, ctx)
+    }
+}
+
+@Composable
+private fun MarkdownBlocks(blocks: List<Markdown.Block>, ctx: MarkdownContext, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
         var stanza = 0
         for (block in blocks) {
@@ -102,7 +112,7 @@ private fun SemanticContainerBlock(block: Markdown.Block.Container, ctx: Markdow
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Eyebrow("aside", Modifier.padding(bottom = 8.dp), colors.accent)
-            MarkdownView(block.children, ctx)
+            MarkdownBlocks(block.children, ctx)
         }
 
         Markdown.ContainerKind.Gallery -> Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
@@ -119,7 +129,7 @@ private fun SemanticContainerBlock(block: Markdown.Block.Container, ctx: Markdow
                             .background(colors.bg1)
                             .border(BorderStroke(1.dp, colors.line), RoundedCornerShape(Skald.metrics.r3))
                             .padding(12.dp)
-                    ) { MarkdownView(listOf(child), ctx) }
+                    ) { MarkdownBlocks(listOf(child), ctx) }
                 }
             }
         }
@@ -131,7 +141,7 @@ private fun SemanticContainerBlock(block: Markdown.Block.Container, ctx: Markdow
                 .clip(RoundedCornerShape(Skald.metrics.card - 2.dp))
                 .border(BorderStroke(1.dp, colors.line2), RoundedCornerShape(Skald.metrics.card - 2.dp))
                 .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) { MarkdownView(block.children, ctx) }
+        ) { MarkdownBlocks(block.children, ctx) }
     }
 }
 
