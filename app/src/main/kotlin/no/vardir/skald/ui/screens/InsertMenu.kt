@@ -54,8 +54,20 @@ private val CORE_INSERTIONS = listOf(
     format("task", "Task", "Add an unchecked thread", "☐", InsertCategory.Lists, FormatAction.Task, "todo", "checkbox", "thread"),
     format("quote", "Quote", "Add or remove block quoting", "❝", InsertCategory.Blocks, FormatAction.Quote, "blockquote"),
     template(
+        "aside", "Aside", "Group supporting context without changing its Markdown blocks", "◧", InsertCategory.Blocks,
+        Insertions.semanticContainer("aside", "Supporting context"), "semantic", "context", "container",
+    ),
+    template(
+        "gallery", "Gallery", "Group images or media for a mobile-friendly gallery", "▧", InsertCategory.Blocks,
+        Insertions.semanticContainer("gallery", "![Image](image.jpg)"), "semantic", "images", "media", "container",
+    ),
+    template(
+        "group", "Group", "Group related blocks under one semantic section", "⌗", InsertCategory.Blocks,
+        Insertions.semanticContainer("group", "Grouped content"), "semantic", "section", "container",
+    ),
+    template(
         "callout", "Callout", "Add a highlighted note block", "!", InsertCategory.Blocks,
-        Insertions.Template("> [!note]\n> Callout text", "Callout text"), "aside", "admonition",
+        Insertions.Template("> [!note]\n> Callout text", "Callout text"), "admonition",
     ),
     format("fence", "Code block", "Add a fenced code block", "```", InsertCategory.Blocks, FormatAction.Fence, "snippet"),
     template(
@@ -89,15 +101,11 @@ fun InsertMenuSheet(
     val visible = remember(all, query) { all.filter { matches(it, query) } }
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    SkaldSheet(
-        title = "Insert",
-        subtitle = "Markdown stays portable",
-        onDismiss = onDismiss,
-    ) {
+    SkaldSheet(title = "Insert", subtitle = "Markdown stays portable", onDismiss = onDismiss) {
         SkaldTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Heading, task, repository…",
+            placeholder = "Heading, aside, gallery, repository…",
             focusRequester = focus,
             imeAction = ImeAction.Search,
         )
@@ -105,18 +113,12 @@ fun InsertMenuSheet(
             val entries = visible.filter { it.category == category }
             if (entries.isEmpty()) continue
             Eyebrow(category.label, Modifier.padding(top = 12.dp, bottom = 2.dp))
-            for (item in entries) {
-                SheetAction(item.glyph, item.label, item.description) { onChoose(item.target) }
-            }
+            for (item in entries) SheetAction(item.glyph, item.label, item.description) { onChoose(item.target) }
         }
-        if (visible.isEmpty()) {
-            Text(
-                "Nothing matches “${query.trim()}”.",
-                style = Skald.type.small,
-                color = Skald.colors.tx3,
-                modifier = Modifier.padding(vertical = 24.dp),
-            )
-        }
+        if (visible.isEmpty()) Text(
+            "Nothing matches “${query.trim()}”.", style = Skald.type.small, color = Skald.colors.tx3,
+            modifier = Modifier.padding(vertical = 24.dp),
+        )
     }
 }
 
@@ -133,26 +135,18 @@ fun InsertionPropertySheet(
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     SkaldSheet(
-        title = contribution.label,
-        subtitle = contribution.description,
-        onDismiss = onDismiss,
+        title = contribution.label, subtitle = contribution.description, onDismiss = onDismiss,
         actions = {
             SheetButtons(
-                confirm = "Connect and insert",
-                enabled = normalized != null,
-                onConfirm = { normalized?.let(onConfirm) },
-                onDismiss = onDismiss,
+                confirm = "Connect and insert", enabled = normalized != null,
+                onConfirm = { normalized?.let(onConfirm) }, onDismiss = onDismiss,
             )
         },
     ) {
         FieldLabel(property.label)
         SkaldTextField(
-            value = value,
-            onValueChange = { value = it },
-            placeholder = property.placeholder,
-            focusRequester = focus,
-            imeAction = ImeAction.Done,
-            onSubmit = { normalized?.let(onConfirm) },
+            value = value, onValueChange = { value = it }, placeholder = property.placeholder,
+            focusRequester = focus, imeAction = ImeAction.Done, onSubmit = { normalized?.let(onConfirm) },
         )
         Text(property.help, style = Skald.type.metaSmall, color = Skald.colors.tx3, modifier = Modifier.padding(top = 6.dp))
     }
@@ -166,21 +160,11 @@ private fun matches(item: InsertMenuItem, query: String): Boolean {
 }
 
 private fun format(
-    id: String,
-    label: String,
-    description: String,
-    glyph: String,
-    category: InsertCategory,
-    action: FormatAction,
-    vararg keywords: String,
+    id: String, label: String, description: String, glyph: String, category: InsertCategory,
+    action: FormatAction, vararg keywords: String,
 ) = InsertMenuItem("core.$id", label, description, glyph, category, keywords.toSet(), InsertTarget.Format(action))
 
 private fun template(
-    id: String,
-    label: String,
-    description: String,
-    glyph: String,
-    category: InsertCategory,
-    value: Insertions.Template,
-    vararg keywords: String,
+    id: String, label: String, description: String, glyph: String, category: InsertCategory,
+    value: Insertions.Template, vararg keywords: String,
 ) = InsertMenuItem("core.$id", label, description, glyph, category, keywords.toSet(), InsertTarget.Template(value))

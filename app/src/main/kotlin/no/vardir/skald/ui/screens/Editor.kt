@@ -53,8 +53,8 @@ import no.vardir.skald.core.model.VaultSnapshot
 import no.vardir.skald.core.text.Dates
 import no.vardir.skald.core.text.Formatting
 import no.vardir.skald.core.text.Frontmatter
-import no.vardir.skald.core.text.LiveMarkdown
 import no.vardir.skald.core.text.Insertions
+import no.vardir.skald.core.text.LiveMarkdown
 import no.vardir.skald.core.text.Markdown
 import no.vardir.skald.core.text.Suggest
 import no.vardir.skald.core.text.Tasks
@@ -123,7 +123,7 @@ fun EditorScreen(
         setBody(Tasks.updateLine(body, line - bodyStartLine, Tasks.Edits(status = if (done) TaskStatus.Done else TaskStatus.Open)))
     }
 
-    val baseCtx = remember(note.meta.path, linkIndex, content) {
+    val baseCtx = remember(note.meta.path, linkIndex, content, note.noteTheme) {
         MarkdownContext(
             resolve = { target -> linkIndex.resolve(target) },
             openNote = onOpenNote,
@@ -133,6 +133,7 @@ fun EditorScreen(
             toggleTask = ::toggleTask,
             todayIso = todayIso,
             frontmatter = parsed.frontmatter,
+            noteTheme = note.noteTheme,
         )
     }
 

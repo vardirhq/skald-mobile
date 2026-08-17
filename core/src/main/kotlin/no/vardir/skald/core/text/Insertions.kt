@@ -8,8 +8,12 @@ object Insertions {
         val block: Boolean = true,
     )
 
-    /** The rewritten text and the selection that should survive into it. */
     data class Edit(val text: String, val start: Int, val end: Int)
+
+    fun semanticContainer(kind: String, placeholder: String): Template {
+        require(kind in setOf("aside", "gallery", "group")) { "Unknown Skald semantic container: $kind" }
+        return Template(":::$kind\n\n$placeholder\n\n:::", placeholder)
+    }
 
     fun apply(text: String, start: Int, end: Int, template: Template): Edit {
         val from = start.coerceIn(0, text.length)

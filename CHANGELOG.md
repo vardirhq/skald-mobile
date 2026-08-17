@@ -8,7 +8,23 @@ The format is based on Keep a Changelog, and releases use Semantic Versioning fo
 
 ### Added
 
+- Added mobile compatibility for Skald semantic documents. Android now parses `:::aside`,
+  `:::gallery`, and `:::group` into real tree nodes whose children remain ordinary Markdown
+  blocks, renders them as native Compose structures, and exposes all three from the Insert sheet.
+  Selecting existing Markdown before insertion wraps it without rewriting the selected blocks.
+- Added portable note-theme support. Mobile resolves the same note `style:` → schema default →
+  vault default precedence as desktop, reads `themes/<name>.css` from the vault, and maps a safe
+  version-1 subset of `--note-*` color tokens into the native Compose reading surface. Arbitrary
+  CSS selectors and unsupported CSS values are never executed and fall back to Skald's native
+  presentation.
+
 ### Changed
+
+- Semantic containers are treated as one protected source-editing region in the mobile live
+  editor while inactive containers render richly. Enter stays inside the fenced region and
+  Backspace cannot implicitly join across its boundary. Code-fence `:::` examples, malformed
+  directives, and deliberately unsupported nested containers remain readable instead of
+  corrupting the surrounding document.
 
 ### Fixed
 

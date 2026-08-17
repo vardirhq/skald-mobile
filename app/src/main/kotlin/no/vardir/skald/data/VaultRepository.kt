@@ -1,6 +1,8 @@
 package no.vardir.skald.data
 
 import android.content.Context
+import java.io.File
+import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,26 +24,16 @@ import no.vardir.skald.core.sync.SyncStatus
 import no.vardir.skald.core.text.Frontmatter
 import no.vardir.skald.core.text.Tasks
 import no.vardir.skald.core.vault.VaultIndex
-import java.io.File
-import java.time.LocalDate
 
-/**
- * The one place that owns the vault, the index and the sync engine. Every
- * screen reads the same [VaultSnapshot]; nothing else parses a note.
- */
+/** The one place that owns the vault, its index, note payloads and sync engine. */
 class VaultRepository(
     context: Context,
     private val scope: CoroutineScope,
-    /** Folder under `files/vaults/`, chosen during setup. */
     vaultDir: String,
-    /** What the person called it, which the folder name may have had to sanitize. */
     private val vaultName: String,
 ) {
-
     private val appContext = context.applicationContext
-
     val vault: FileVault = FileVault(File(appContext.filesDir, "vaults/$vaultDir"))
-
     private val secrets = KeystoreSecrets(appContext)
 
     val sync: SyncEngine = SyncEngine(
@@ -50,12 +42,10 @@ class VaultRepository(
         stateStore = vault.syncStateStore(),
         devicePrefix = "phone",
     )
-
     val syncStatus: StateFlow<SyncStatus> get() = sync.status
 
     private val _snapshot = MutableStateFlow(emptySnapshot())
     val snapshot: StateFlow<VaultSnapshot> get() = _snapshot.asStateFlow()
-
     private var settings: VaultSettings = VaultSettings()
 
     private fun emptySnapshot(): VaultSnapshot = VaultIndex.build(
@@ -67,9 +57,6 @@ class VaultRepository(
 
     fun today(): String = LocalDate.now().toString()
 
-    // ---------- indexing ----------
-
-    /** Re-reads the vault from disk and republishes the snapshot. */
     suspend fun reindex() = withContext(Dispatchers.IO) {
         settings = vault.loadSettings()
         val positions = vault.loadPositions().mapValues { Layout.Point(it.value.first, it.value.second) }
@@ -81,25 +68,16 @@ class VaultRepository(
             todayIso = today(),
             emptyFolders = vault.folders(),
         )
-        // The layout is only interesting once: persist what it decided, so the
-        // constellation is a place you return to rather than a fresh guess.
         val laidOut = built.graph.nodes.associate { it.path to (it.x to it.y) }
         if (laidOut != vault.loadPositions()) vault.savePositions(laidOut)
         _snapshot.value = built
         sync.notifyVaultChanged()
     }
 
-    /**
-     * Writes the sample vault. Only ever called from setup, and only when it was
-     * asked for: these notes are examples, not the person's, and a vault that
-     * refills itself with them is one nobody can empty.
-     */
     suspend fun seed() = withContext(Dispatchers.IO) {
         SeedVault.write(vault, today())
         reindex()
     }
-
-    // ---------- notes ----------
 
     suspend fun note(path: String): NotePayload? = withContext(Dispatchers.IO) {
         val meta = _snapshot.value.byPath[path] ?: return@withContext null
@@ -112,6 +90,7 @@ class VaultRepository(
             bodyStartLine = parsed.bodyStartLine,
             backlinks = backlinks(path),
             attachments = vault.attachmentsIn(path, parsed.body),
+            noteTheme = vault.resolveNoteTheme(parsed.frontmatter, meta.schema, settings),
         )
     }
 
@@ -167,10 +146,6 @@ class VaultRepository(
         result
     }
 
-    /**
-     * Rewrite a note's frontmatter in place. The body is untouched, which is
-     * what lets a properties sheet be a form rather than a second editor.
-     */
     suspend fun editFrontmatter(
         path: String,
         changes: Map<String, Any?> = emptyMap(),
@@ -183,8 +158,6 @@ class VaultRepository(
         reindex()
         true
     }
-
-    // ---------- folders ----------
 
     suspend fun createFolder(path: String): Boolean = withContext(Dispatchers.IO) {
         val made = vault.createFolder(path)
@@ -211,9 +184,7 @@ class VaultRepository(
     }
 
     suspend fun history(path: String): List<NoteHistoryEntry> = withContext(Dispatchers.IO) { vault.history(path) }
-
-    suspend fun readVersion(path: String, id: String): String? =
-        withContext(Dispatchers.IO) { vault.readVersion(path, id) }
+    suspend fun readVersion(path: String, id: String): String? = withContext(Dispatchers.IO) { vault.readVersion(path, id) }
 
     suspend fun restoreVersion(path: String, id: String) = withContext(Dispatchers.IO) {
         vault.restoreVersion(path, id)
@@ -228,20 +199,10 @@ class VaultRepository(
         restored
     }
 
-    // ---------- threads ----------
-
-    /**
-     * The bidirectional binding: a task edited anywhere rewrites the line in its
-     * parent note, and the index picks the change back up.
-     */
     suspend fun editTask(path: String, line: Int, edits: Tasks.Edits) = withContext(Dispatchers.IO) {
         if (vault.editTask(path, line, edits)) reindex()
     }
 
-    /**
-     * Write a new thread into a note — today's page when none is named, made on
-     * the way in if today has not been opened yet.
-     */
     suspend fun addTask(notePath: String?, line: String): String = withContext(Dispatchers.IO) {
         val target = notePath?.takeIf { vault.exists(it) } ?: vault.ensureDaily(settings, today())
         vault.appendLine(target, line)
@@ -249,15 +210,12 @@ class VaultRepository(
         target
     }
 
-    // ---------- settings ----------
-
     suspend fun updateSettings(transform: (VaultSettings) -> VaultSettings) = withContext(Dispatchers.IO) {
         settings = transform(settings)
         vault.saveSettings(settings)
         _snapshot.value = _snapshot.value.copy(settings = settings)
     }
 
-    /** A star dragged to a new place stays there. */
     fun moveStar(path: String, x: Float, y: Float) {
         scope.launch(Dispatchers.IO) {
             val positions = vault.loadPositions().toMutableMap()
@@ -272,8 +230,6 @@ class VaultRepository(
             }
         }
     }
-
-    // ---------- sync ----------
 
     suspend fun connectSync(serverUrl: String, handle: String?, provisioningSecret: String?) {
         sync.connect(serverUrl, handle?.ifBlank { null }, provisioningSecret?.ifBlank { null })
@@ -298,9 +254,7 @@ class VaultRepository(
     }
 
     suspend fun mintPairing(): PairingTicket = sync.mintPairing()
-
     suspend fun listDevices(): List<SyncDeviceInfo> = sync.listDevices()
-
     suspend fun revokeDevice(deviceId: String): List<SyncDeviceInfo> = sync.revokeDevice(deviceId)
 
     fun setSyncEnabled(enabled: Boolean) {
