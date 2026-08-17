@@ -64,9 +64,7 @@ object Markdown {
         data class Container(
             val kind: ContainerKind,
             val children: List<Block>,
-            /** 1-based source line containing the opening `:::` fence. */
             val startLine: Int,
-            /** 1-based source line containing the closing `:::` fence. */
             val endLine: Int,
         ) : Block
     }
@@ -132,10 +130,22 @@ object Markdown {
                 if (opener != null) {
                     var cursor = i + 1
                     var inCode = false
+                    var nestedDepth = 0
                     var closeAt = -1
                     while (cursor < lines.size) {
-                        if (CLOSING_FENCE.containsMatchIn(lines[cursor])) inCode = !inCode
-                        if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) { closeAt = cursor; break }
+                        if (CLOSING_FENCE.containsMatchIn(lines[cursor])) {
+                            inCode = !inCode
+                            cursor++
+                            continue
+                        }
+                        if (!inCode && CONTAINER_OPEN.matches(lines[cursor])) {
+                            nestedDepth++
+                        } else if (!inCode && CONTAINER_CLOSE.matches(lines[cursor])) {
+                            if (nestedDepth > 0) nestedDepth-- else {
+                                closeAt = cursor
+                                break
+                            }
+                        }
                         cursor++
                     }
                     if (closeAt >= 0) {
@@ -146,7 +156,10 @@ object Markdown {
                         i = closeAt + 1
                         continue
                     }
-                    // Unclosed syntax is deliberately left readable as ordinary Markdown.
+                    // Malformed directives are visible/recoverable rather than wedging the parser.
+                    out += Block.Paragraph(inline(line.trim()))
+                    i++
+                    continue
                 }
             }
 
@@ -225,8 +238,6 @@ object Markdown {
 
             val buf = mutableListOf<String>()
             while (i < lines.size && !startsBlock(i)) { buf += lines[i]; i++ }
-            // A standalone closing container fence in a nested parse is source syntax,
-            // not a reason to wedge the parser. Consume it as readable text.
             if (buf.isEmpty() && i < lines.size && CONTAINER_CLOSE.matches(lines[i])) { buf += lines[i]; i++ }
             val text = buf.joinToString(" ").trim()
             if (text.isNotEmpty()) out += Block.Paragraph(inline(text))
